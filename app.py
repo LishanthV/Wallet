@@ -1,13 +1,11 @@
-import os
-import secrets
-import smtplib
+import os, secrets, smtplib, csv, io
 from email.mime.multipart import MIMEMultipart
 from email.mime.text      import MIMEText
 from datetime             import datetime, date, timedelta
 from functools            import wraps
 
 from flask import (Flask, render_template, request, redirect,
-                   url_for, jsonify, flash, session)
+                   url_for, jsonify, flash, session, Response)
 from werkzeug.security import generate_password_hash, check_password_hash
 import mysql.connector
 from mysql.connector import Error
@@ -16,64 +14,37 @@ import calendar
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "finance_super_secret_2025")
 
-# ── Database config ────────────────────────────
 DB_CONFIG = {
     "host":     os.environ.get("DB_HOST",     "localhost"),
     "user":     os.environ.get("DB_USER",     "root"),
-    "password": os.environ.get("DB_PASSWORD", "Li$h@nth2005"),
+    "password": os.environ.get("DB_PASSWORD", ""),
     "database": os.environ.get("DB_NAME",     "finance_db"),
 }
-
-# ── Email / SMTP config ────────────────────────
 SMTP_CONFIG = {
     "host":     os.environ.get("SMTP_HOST",     "smtp.gmail.com"),
     "port":     int(os.environ.get("SMTP_PORT", "587")),
-    "user":     os.environ.get("SMTP_USER",     "lishanthcse@gmail.com"),
-    "password": os.environ.get("SMTP_PASSWORD", "jgci yfiw sora oaib"),
-    "from":     os.environ.get("SMTP_FROM",     "Finance Tracker <lishanthcse@gmail.com>"),
+    "user":     os.environ.get("SMTP_USER",     "your_gmail@gmail.com"),
+    "password": os.environ.get("SMTP_PASSWORD", "your_app_password"),
+    "from":     os.environ.get("SMTP_FROM",     "Finance App <your_gmail@gmail.com>"),
 }
-
-APP_URL = os.environ.get("APP_URL", "http://10.19.170.42:5000")
-
-CATEGORIES = [
-    "Food", "Rent", "Transport", "Shopping",
-    "Bills", "Entertainment", "Health", "Others"
-]
-
-CAT_ICONS = {
-    "Food": "🛒", "Rent": "🏠", "Transport": "🚗",
-    "Shopping": "🛍️", "Bills": "🌐", "Entertainment": "🎬",
-    "Health": "💊", "Others": "💳"
-}
-
-CAT_COLORS = {
-    "Food": "#9d8df1", "Rent": "#ff7eb3", "Transport": "#4caf50",
-    "Shopping": "#ffeb3b", "Bills": "#ff9800", "Entertainment": "#00bcd4",
-    "Health": "#e91e63", "Others": "#8bc34a"
-}
+APP_URL     = os.environ.get("APP_URL", "http://127.0.0.1:5000")
+CATEGORIES  = ["Food","Rent","Transport","Shopping","Bills","Entertainment","Health","Others"]
+INCOME_CATS = ["Salary","Freelance","Business","Investment","Gift","Other"]
+CAT_ICONS   = {"Food":"🛒","Rent":"🏠","Transport":"🚗","Shopping":"🛍️",
+               "Bills":"🌐","Entertainment":"🎬","Health":"💊","Others":"💳"}
+CAT_COLORS  = ["#7F77DD","#AFA9EC","#CECBF6","#534AB7","#888780","#D3D1C7","#3C3489","#B4B2A9"]
+GOAL_ICONS  = ["🎯","🏖️","🚗","🏠","💻","✈️","🎓","💍","📱","💰"]
 
 
 # ─────────────────────────────────────────────
-#  DB helper
+#  Helpers
 # ─────────────────────────────────────────────
 def get_db():
     try:
         return mysql.connector.connect(**DB_CONFIG)
     except Error as e:
-        print(f"\n{'='*60}")
-        print(f"[DB CONNECTION FAILED]")
-        print(f"  Error  : {e}")
-        print(f"  Host   : {DB_CONFIG['host']}")
-        print(f"  User   : {DB_CONFIG['user']}")
-        print(f"  DB     : {DB_CONFIG['database']}")
-        print(f"  Fix    : Update DB_CONFIG password in app.py")
-        print(f"{'='*60}\n")
-        return None
+        print(f"[DB] {e}"); return None
 
-
-# ─────────────────────────────────────────────
-#  Auth decorator
-# ─────────────────────────────────────────────
 def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -83,676 +54,541 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated
 
+def apply_recurring(user_id):
+    today = date.today()
+    conn  = get_db(); cur = conn.cursor(dictionary=True)
+    cur.execute("""
+        SELECT * FROM recurring_expenses
+        WHERE user_id=%s AND is_active=1 AND day_of_month<=%s
+          AND (last_applied IS NULL OR last_applied < DATE_FORMAT(%s,'%%Y-%%m-01'))
+    """, (user_id, today.day, today))
+    due = cur.fetchall()
+    for r in due:
+        cur.execute("""INSERT INTO expenses (user_id,title,amount,category,expense_date,note)
+            VALUES(%s,%s,%s,%s,%s,%s)""",
+            (user_id, r["title"], r["amount"], r["category"],
+             date(today.year, today.month, r["day_of_month"]),
+             f"[Auto] {r['note'] or ''}"))
+        cur.execute("UPDATE recurring_expenses SET last_applied=%s WHERE id=%s",(today,r["id"]))
+    conn.commit(); cur.close(); conn.close()
+    return len(due)
+
 
 # ─────────────────────────────────────────────
-#  Email helpers
+#  Email
 # ─────────────────────────────────────────────
 def send_email(to_addr, subject, html_body):
-    """
-    Send HTML email. Tries STARTTLS on port 587 first,
-    then falls back to SSL on port 465.
-    """
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"]    = SMTP_CONFIG["from"]
-    msg["To"]      = to_addr
+    msg["Subject"] = subject; msg["From"] = SMTP_CONFIG["from"]; msg["To"] = to_addr
     msg.attach(MIMEText(html_body, "html"))
-
-    # Attempt 1: STARTTLS on port 587
     try:
-        print(f"[Email] Connecting to {SMTP_CONFIG['host']}:587 (STARTTLS)...")
         with smtplib.SMTP(SMTP_CONFIG["host"], 587, timeout=15) as s:
             s.ehlo(); s.starttls(); s.ehlo()
             s.login(SMTP_CONFIG["user"], SMTP_CONFIG["password"])
             s.sendmail(SMTP_CONFIG["user"], to_addr, msg.as_string())
-        print(f"[Email] ✓ Sent to {to_addr} via STARTTLS")
         return True
     except Exception as e1:
         print(f"[Email] STARTTLS failed: {e1}")
-
-    # Attempt 2: SSL on port 465
     try:
-        import ssl
-        print(f"[Email] Retrying {SMTP_CONFIG['host']}:465 (SSL)...")
-        ctx = ssl.create_default_context()
+        import ssl; ctx = ssl.create_default_context()
         with smtplib.SMTP_SSL(SMTP_CONFIG["host"], 465, context=ctx, timeout=15) as s:
             s.login(SMTP_CONFIG["user"], SMTP_CONFIG["password"])
             s.sendmail(SMTP_CONFIG["user"], to_addr, msg.as_string())
-        print(f"[Email] ✓ Sent to {to_addr} via SSL")
         return True
     except Exception as e2:
         print(f"[Email] SSL failed: {e2}")
-
-    print("[Email] Both attempts failed. Check Gmail App Password.")
     return False
-
 
 def create_token(user_id, token_type="verify", hours=24):
     token  = secrets.token_urlsafe(32)
     expiry = datetime.utcnow() + timedelta(hours=hours)
-    conn   = get_db()
-    cur    = conn.cursor()
-    cur.execute("""
-        UPDATE email_tokens SET used=1
-        WHERE user_id=%s AND token_type=%s AND used=0
-    """, (user_id, token_type))
-    cur.execute("""
-        INSERT INTO email_tokens (user_id, token, token_type, expires_at)
-        VALUES (%s, %s, %s, %s)
-    """, (user_id, token, token_type, expiry))
-    conn.commit()
-    cur.close(); conn.close()
-    return token
-
+    conn   = get_db(); cur = conn.cursor()
+    cur.execute("UPDATE email_tokens SET used=1 WHERE user_id=%s AND token_type=%s AND used=0",
+                (user_id, token_type))
+    cur.execute("INSERT INTO email_tokens (user_id,token,token_type,expires_at) VALUES(%s,%s,%s,%s)",
+                (user_id, token, token_type, expiry))
+    conn.commit(); cur.close(); conn.close(); return token
 
 def send_verification_email(email, name, token):
     link = f"{APP_URL}/verify-email/{token}"
-    html = f"""
-    <div style="font-family:'Outfit',sans-serif;max-width:520px;margin:auto;padding:0;background:#0f0c20;border-radius:20px;overflow:hidden">
-      <div style="background:linear-gradient(135deg,#9d8df1,#534AB7);padding:32px;text-align:center">
-        <span style="font-size:36px">&#10022;</span>
-        <h2 style="color:#fff;margin:8px 0 0;font-size:24px;font-weight:700">Finance Tracker</h2>
-      </div>
-      <div style="padding:36px;background:#1a1a2e">
-        <h3 style="color:#e8e7f0;font-size:20px;margin-bottom:12px">Hi {name},</h3>
-        <p style="color:#a1a0ab;line-height:1.8;margin-bottom:24px">
-          Thanks for signing up! Please verify your email address to activate your account.
-          This link expires in <strong style="color:#9d8df1">24 hours</strong>.
-        </p>
-        <div style="text-align:center;margin:32px 0">
-          <a href="{link}" style="background:linear-gradient(135deg,#9d8df1,#7F77DD);color:#fff;padding:14px 40px;
-             border-radius:10px;text-decoration:none;font-weight:600;font-size:16px;display:inline-block">
-            Verify Email Address
-          </a>
-        </div>
-        <p style="color:#757480;font-size:12px;text-align:center">
-          Or copy this link: <a href="{link}" style="color:#9d8df1">{link}</a>
-        </p>
-        <p style="color:#4a4955;font-size:11px;text-align:center;margin-top:24px">
-          If you didn't create this account, you can safely ignore this email.
-        </p>
-      </div>
-    </div>"""
-    return send_email(email, "Verify your Finance Tracker account", html)
-
+    html = f"""<div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;background:#f5f4f8;border-radius:16px">
+      <div style="background:#7F77DD;border-radius:12px;padding:24px;text-align:center;margin-bottom:24px">
+        <h2 style="color:#fff;margin:0">Finance Dashboard</h2></div>
+      <h3 style="color:#1a1a2e">Hi {name},</h3>
+      <p style="color:#6b6a75;line-height:1.7">Thanks for signing up! Verify your email — link expires in <strong>24 hours</strong>.</p>
+      <div style="text-align:center;margin:28px 0">
+        <a href="{link}" style="background:#7F77DD;color:#fff;padding:13px 36px;border-radius:8px;text-decoration:none;font-weight:600">Verify Email</a></div>
+      <p style="color:#9f9ea8;font-size:12px;text-align:center">Or copy: <a href="{link}">{link}</a></p></div>"""
+    return send_email(email, "Verify your Finance Dashboard account", html)
 
 def send_reset_email(email, name, token):
     link = f"{APP_URL}/reset-password/{token}"
-    html = f"""
-    <div style="font-family:'Outfit',sans-serif;max-width:520px;margin:auto;padding:0;background:#0f0c20;border-radius:20px;overflow:hidden">
-      <div style="background:linear-gradient(135deg,#ff7eb3,#ff758c);padding:32px;text-align:center">
-        <span style="font-size:36px">&#128274;</span>
-        <h2 style="color:#fff;margin:8px 0 0;font-size:24px;font-weight:700">Finance Tracker</h2>
-      </div>
-      <div style="padding:36px;background:#1a1a2e">
-        <h3 style="color:#e8e7f0;font-size:20px;margin-bottom:12px">Hi {name},</h3>
-        <p style="color:#a1a0ab;line-height:1.8;margin-bottom:24px">
-          We received a request to reset your password. This link expires in
-          <strong style="color:#ff7eb3">1 hour</strong>.
-        </p>
-        <div style="text-align:center;margin:32px 0">
-          <a href="{link}" style="background:linear-gradient(135deg,#ff7eb3,#ff758c);color:#fff;padding:14px 40px;
-             border-radius:10px;text-decoration:none;font-weight:600;font-size:16px;display:inline-block">
-            Reset Password
-          </a>
-        </div>
-        <p style="color:#757480;font-size:12px;text-align:center">
-          If you didn't request this, ignore this email — your password won't change.
-        </p>
-      </div>
-    </div>"""
-    return send_email(email, "Reset your Finance Tracker password", html)
+    html = f"""<div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;background:#f5f4f8;border-radius:16px">
+      <div style="background:#534AB7;border-radius:12px;padding:24px;text-align:center;margin-bottom:24px">
+        <h2 style="color:#fff;margin:0">Finance Dashboard</h2></div>
+      <h3 style="color:#1a1a2e">Hi {name},</h3>
+      <p style="color:#6b6a75;line-height:1.7">Password reset link — expires in <strong>1 hour</strong>.</p>
+      <div style="text-align:center;margin:28px 0">
+        <a href="{link}" style="background:#534AB7;color:#fff;padding:13px 36px;border-radius:8px;text-decoration:none;font-weight:600">Reset Password</a></div></div>"""
+    return send_email(email, "Reset your Finance Dashboard password", html)
 
 
 # ─────────────────────────────────────────────
-#  ROOT redirect
+#  AUTH
 # ─────────────────────────────────────────────
-@app.route("/")
-def index():
-    if "user_id" in session:
-        return redirect(url_for("dashboard"))
-    return redirect(url_for("login"))
-
-
-# ─────────────────────────────────────────────
-#  AUTH ROUTES
-# ─────────────────────────────────────────────
-
-@app.route("/register", methods=["GET", "POST"])
+@app.route("/register", methods=["GET","POST"])
 def register():
-    if "user_id" in session:
-        return redirect(url_for("dashboard"))
-
+    if "user_id" in session: return redirect(url_for("dashboard"))
     if request.method == "POST":
-        name    = request.form["name"].strip()
-        email   = request.form["email"].strip().lower()
-        pw      = request.form["password"]
-        confirm = request.form["confirm_password"]
-
-        if len(name) < 2:
-            flash("Name must be at least 2 characters.", "danger")
+        name=request.form["name"].strip(); email=request.form["email"].strip().lower()
+        pw=request.form["password"]; confirm=request.form["confirm_password"]
+        if len(name)<2:  flash("Name too short.","danger");        return render_template("register.html")
+        if len(pw)<8:    flash("Password min 8 chars.","danger");  return render_template("register.html")
+        if pw!=confirm:  flash("Passwords don't match.","danger"); return render_template("register.html")
+        conn=get_db()
+        if not conn:
+            flash("Database connection failed. Check your MySQL server or credentials in app.py.", "danger")
             return render_template("register.html")
-        if len(pw) < 8:
-            flash("Password must be at least 8 characters.", "danger")
-            return render_template("register.html")
-        if pw != confirm:
-            flash("Passwords do not match.", "danger")
-            return render_template("register.html")
-
-        conn = get_db()
-        cur  = conn.cursor(dictionary=True)
-        cur.execute("SELECT id FROM users WHERE email=%s", (email,))
+        cur=conn.cursor(dictionary=True)
+        cur.execute("SELECT id FROM users WHERE email=%s",(email,))
         if cur.fetchone():
-            flash("An account with that email already exists.", "danger")
-            cur.close(); conn.close()
+            flash("Email already registered.","danger"); cur.close(); conn.close()
             return render_template("register.html")
-
-        cur.execute("""
-            INSERT INTO users (name, email, password_hash) VALUES (%s,%s,%s)
-        """, (name, email, generate_password_hash(pw)))
-        conn.commit()
-        user_id = cur.lastrowid
-        cur.close(); conn.close()
-
-        token = create_token(user_id, "verify", hours=24)
-        sent  = send_verification_email(email, name, token)
-        if sent:
-            flash("Account created! Check your email to verify your account. 📧", "success")
-        else:
-            # Dev-mode fallback: show the verify link directly so you can still use the app
-            verify_url = f"{APP_URL}/verify-email/{token}"
-            print(f"\n[DEV] Email failed — verify manually: {verify_url}\n")
-            flash(
-                f"Account created! Email delivery failed. "
-                f"<a href='/verify-email/{token}' style='color:#ffeb3b;font-weight:700;text-decoration:underline;'>"
-                f"Click here to verify your account manually →</a>",
-                "warning"
-            )
+        cur.execute("INSERT INTO users (name,email,password_hash) VALUES(%s,%s,%s)",
+                    (name,email,generate_password_hash(pw)))
+        conn.commit(); uid=cur.lastrowid; cur.close(); conn.close()
+        token=create_token(uid,"verify",24); sent=send_verification_email(email,name,token)
+        flash("Account created! Check your email." if sent
+              else "Account created but email failed. Use Resend below.","success" if sent else "warning")
         return redirect(url_for("login"))
-
     return render_template("register.html")
 
-
-@app.route("/login", methods=["GET", "POST"])
+@app.route("/login", methods=["GET","POST"])
 def login():
-    if "user_id" in session:
-        return redirect(url_for("dashboard"))
-
+    if "user_id" in session: return redirect(url_for("dashboard"))
     if request.method == "POST":
-        email = request.form["email"].strip().lower()
-        pw    = request.form["password"]
-
-        conn = get_db()
-        cur  = conn.cursor(dictionary=True)
-        cur.execute("SELECT * FROM users WHERE email=%s", (email,))
-        user = cur.fetchone()
-        cur.close(); conn.close()
-
-        if not user or not check_password_hash(user["password_hash"], pw):
-            flash("Invalid email or password.", "danger")
+        email=request.form["email"].strip().lower(); pw=request.form["password"]
+        conn=get_db()
+        if not conn:
+            flash("Database connection failed. Check your MySQL server or credentials in app.py.", "danger")
             return render_template("login.html")
-
+        cur=conn.cursor(dictionary=True)
+        cur.execute("SELECT * FROM users WHERE email=%s",(email,))
+        user=cur.fetchone(); cur.close(); conn.close()
+        if not user or not check_password_hash(user["password_hash"],pw):
+            flash("Invalid email or password.","danger"); return render_template("login.html")
         if not user["is_verified"]:
-            flash("Please verify your email before logging in.", "warning")
-            return render_template("login.html", unverified=True, unverified_email=email)
-
-        session["user_id"]    = user["id"]
-        session["user_name"]  = user["name"]
-        session["user_email"] = user["email"]
-        flash(f"Welcome back, {user['name']}! 👋", "success")
+            flash("Please verify your email first.","warning")
+            return render_template("login.html",unverified=True,unverified_email=email)
+        session.update({"user_id":user["id"],"user_name":user["name"],"user_email":user["email"]})
+        n=apply_recurring(user["id"])
+        if n: flash(f"{n} recurring expense(s) auto-applied for this month.","info")
+        flash(f"Welcome back, {user['name']}!","success")
         return redirect(url_for("dashboard"))
-
     return render_template("login.html")
-
 
 @app.route("/logout")
 def logout():
-    session.clear()
-    flash("You've been logged out.", "info")
-    return redirect(url_for("login"))
+    session.clear(); flash("Logged out.","info"); return redirect(url_for("login"))
 
-
-@app.route("/verify-email/<token>")
+@app.route("/verify-email/<path:token>")
 def verify_email(token):
-    conn = get_db()
-    cur  = conn.cursor(dictionary=True)
-    cur.execute("""
-        SELECT * FROM email_tokens
-        WHERE token=%s AND token_type='verify' AND used=0
-    """, (token,))
-    rec = cur.fetchone()
-
-    if not rec:
-        flash("Invalid or already-used verification link.", "danger")
-        cur.close(); conn.close()
-        return redirect(url_for("login"))
-    if datetime.utcnow() > rec["expires_at"]:
-        flash("Verification link expired. Request a new one below.", "warning")
-        cur.close(); conn.close()
-        return redirect(url_for("login"))
-
-    cur.execute("UPDATE users SET is_verified=1 WHERE id=%s", (rec["user_id"],))
-    cur.execute("UPDATE email_tokens SET used=1 WHERE id=%s", (rec["id"],))
-    conn.commit()
-    cur.close(); conn.close()
-
-    flash("Email verified! You can now log in. 🎉", "success")
-    return redirect(url_for("login"))
-
+    token=token.strip(); conn=get_db(); cur=conn.cursor(dictionary=True)
+    cur.execute("""SELECT et.*,u.is_verified AS already_verified FROM email_tokens et
+        JOIN users u ON u.id=et.user_id WHERE et.token=%s AND et.token_type='verify'""",(token,))
+    rec=cur.fetchone()
+    if not rec: cur.close(); conn.close(); flash("Invalid verification link.","danger"); return redirect(url_for("login"))
+    if rec["used"] or rec["already_verified"]: cur.close(); conn.close(); flash("Already verified. Please log in.","info"); return redirect(url_for("login"))
+    expires=rec["expires_at"]
+    now=(datetime.now(__import__("datetime").timezone.utc) if hasattr(expires,"tzinfo") and expires.tzinfo else datetime.utcnow())
+    if now>expires: cur.close(); conn.close(); flash("Link expired. Request a new one.","warning"); return redirect(url_for("login"))
+    cur.execute("UPDATE users SET is_verified=1 WHERE id=%s",(rec["user_id"],))
+    cur.execute("UPDATE email_tokens SET used=1 WHERE id=%s",(rec["id"],))
+    conn.commit(); cur.close(); conn.close()
+    flash("Email verified! You can now log in.","success"); return redirect(url_for("login"))
 
 @app.route("/resend-verification", methods=["POST"])
 def resend_verification():
-    email = request.form.get("email", "").strip().lower()
-    conn  = get_db()
-    cur   = conn.cursor(dictionary=True)
-    cur.execute("SELECT * FROM users WHERE email=%s AND is_verified=0", (email,))
-    user  = cur.fetchone()
-    cur.close(); conn.close()
-    if user:
-        token = create_token(user["id"], "verify", hours=24)
-        send_verification_email(email, user["name"], token)
-    flash("If that email is registered and unverified, a new link has been sent.", "info")
-    return redirect(url_for("login"))
+    email=request.form.get("email","").strip().lower(); conn=get_db(); cur=conn.cursor(dictionary=True)
+    cur.execute("SELECT * FROM users WHERE email=%s AND is_verified=0",(email,))
+    user=cur.fetchone(); cur.close(); conn.close()
+    if user: token=create_token(user["id"],"verify",24); send_verification_email(email,user["name"],token)
+    flash("If that email is unverified, a new link has been sent.","info"); return redirect(url_for("login"))
 
-
-@app.route("/forgot-password", methods=["GET", "POST"])
+@app.route("/forgot-password", methods=["GET","POST"])
 def forgot_password():
-    if request.method == "POST":
-        email = request.form["email"].strip().lower()
-        conn  = get_db()
-        cur   = conn.cursor(dictionary=True)
-        cur.execute("SELECT * FROM users WHERE email=%s AND is_verified=1", (email,))
-        user  = cur.fetchone()
-        cur.close(); conn.close()
-        if user:
-            token = create_token(user["id"], "reset", hours=1)
-            send_reset_email(email, user["name"], token)
-        flash("If that email is registered, you'll receive a reset link shortly.", "info")
-        return redirect(url_for("login"))
+    if request.method=="POST":
+        email=request.form["email"].strip().lower(); conn=get_db(); cur=conn.cursor(dictionary=True)
+        cur.execute("SELECT * FROM users WHERE email=%s AND is_verified=1",(email,))
+        user=cur.fetchone(); cur.close(); conn.close()
+        if user: token=create_token(user["id"],"reset",1); send_reset_email(email,user["name"],token)
+        flash("If that email is registered, a reset link has been sent.","info"); return redirect(url_for("login"))
     return render_template("forgot_password.html")
 
-
-@app.route("/reset-password/<token>", methods=["GET", "POST"])
+@app.route("/reset-password/<token>", methods=["GET","POST"])
 def reset_password(token):
-    conn = get_db()
-    cur  = conn.cursor(dictionary=True)
-    cur.execute("""
-        SELECT * FROM email_tokens
-        WHERE token=%s AND token_type='reset' AND used=0
-    """, (token,))
-    rec = cur.fetchone()
-
-    if not rec or datetime.utcnow() > rec["expires_at"]:
-        flash("Invalid or expired reset link.", "danger")
-        cur.close(); conn.close()
-        return redirect(url_for("forgot_password"))
-
-    if request.method == "POST":
-        pw      = request.form["password"]
-        confirm = request.form["confirm_password"]
-        if len(pw) < 8:
-            flash("Password must be at least 8 characters.", "danger")
-            cur.close(); conn.close()
-            return render_template("reset_password.html", token=token)
-        if pw != confirm:
-            flash("Passwords do not match.", "danger")
-            cur.close(); conn.close()
-            return render_template("reset_password.html", token=token)
-
-        cur.execute("UPDATE users SET password_hash=%s WHERE id=%s",
-                    (generate_password_hash(pw), rec["user_id"]))
-        cur.execute("UPDATE email_tokens SET used=1 WHERE id=%s", (rec["id"],))
-        conn.commit()
-        cur.close(); conn.close()
-        flash("Password reset successfully! Please log in. 🔐", "success")
-        return redirect(url_for("login"))
-
-    cur.close(); conn.close()
-    return render_template("reset_password.html", token=token)
+    conn=get_db(); cur=conn.cursor(dictionary=True)
+    cur.execute("SELECT * FROM email_tokens WHERE token=%s AND token_type='reset' AND used=0",(token,))
+    rec=cur.fetchone()
+    if not rec or datetime.utcnow()>rec["expires_at"]: cur.close(); conn.close(); flash("Invalid or expired link.","danger"); return redirect(url_for("forgot_password"))
+    if request.method=="POST":
+        pw=request.form["password"]; confirm=request.form["confirm_password"]
+        if len(pw)<8 or pw!=confirm:
+            flash("Password min 8 chars and must match.","danger"); cur.close(); conn.close(); return render_template("reset_password.html",token=token)
+        cur.execute("UPDATE users SET password_hash=%s WHERE id=%s",(generate_password_hash(pw),rec["user_id"]))
+        cur.execute("UPDATE email_tokens SET used=1 WHERE id=%s",(rec["id"],))
+        conn.commit(); cur.close(); conn.close(); flash("Password reset!","success"); return redirect(url_for("login"))
+    cur.close(); conn.close(); return render_template("reset_password.html",token=token)
 
 
 # ─────────────────────────────────────────────
 #  DASHBOARD
 # ─────────────────────────────────────────────
-
+@app.route("/")
 @app.route("/dashboard")
 @login_required
 def dashboard():
-    user_id     = session["user_id"]
-    conn        = get_db()
-    cur         = conn.cursor(dictionary=True)
-    today       = date.today()
-    month, year = today.month, today.year
+    uid=session["user_id"]; today=date.today(); m,y=today.month,today.year
+    conn=get_db(); cur=conn.cursor(dictionary=True)
 
-    # Total spent this month
-    cur.execute("""
-        SELECT COALESCE(SUM(amount),0) AS total FROM expenses
-        WHERE user_id=%s AND MONTH(expense_date)=%s AND YEAR(expense_date)=%s
-    """, (user_id, month, year))
-    total = float(cur.fetchone()["total"])
+    cur.execute("SELECT wallet_balance FROM users WHERE id=%s",(uid,))
+    wallet=float(cur.fetchone()["wallet_balance"] or 0)
 
-    # Daily average
-    cur.execute("""
-        SELECT COALESCE(AVG(ds),0) AS avg_d FROM (
-            SELECT SUM(amount) AS ds FROM expenses
-            WHERE user_id=%s AND MONTH(expense_date)=%s AND YEAR(expense_date)=%s
-            GROUP BY expense_date
-        ) x
-    """, (user_id, month, year))
-    avg_daily = round(float(cur.fetchone()["avg_d"]), 2)
+    cur.execute("SELECT COALESCE(SUM(amount),0) AS t FROM expenses WHERE user_id=%s AND MONTH(expense_date)=%s AND YEAR(expense_date)=%s",(uid,m,y))
+    total=float(cur.fetchone()["t"])
+    cur.execute("SELECT COALESCE(SUM(amount),0) AS t FROM income WHERE user_id=%s AND MONTH(income_date)=%s AND YEAR(income_date)=%s",(uid,m,y))
+    total_income=float(cur.fetchone()["t"])
+    cur.execute("SELECT COALESCE(AVG(ds),0) AS a FROM (SELECT SUM(amount) AS ds FROM expenses WHERE user_id=%s AND MONTH(expense_date)=%s AND YEAR(expense_date)=%s GROUP BY expense_date) x",(uid,m,y))
+    avg_daily=round(float(cur.fetchone()["a"]),2)
+    cur.execute("SELECT expense_date,COALESCE(SUM(amount),0) AS dt FROM expenses WHERE user_id=%s AND MONTH(expense_date)=%s AND YEAR(expense_date)=%s GROUP BY expense_date ORDER BY dt DESC LIMIT 1",(uid,m,y))
+    peak=cur.fetchone(); peak_day=str(peak["expense_date"]) if peak else "—"; peak_total=float(peak["dt"]) if peak else 0
+    cur.execute("SELECT COUNT(*) AS c FROM expenses WHERE user_id=%s AND MONTH(expense_date)=%s AND YEAR(expense_date)=%s",(uid,m,y))
+    tx_count=cur.fetchone()["c"]
 
-    # Peak day
-    cur.execute("""
-        SELECT expense_date, COALESCE(SUM(amount),0) AS dt FROM expenses
-        WHERE user_id=%s AND MONTH(expense_date)=%s AND YEAR(expense_date)=%s
-        GROUP BY expense_date ORDER BY dt DESC LIMIT 1
-    """, (user_id, month, year))
-    peak       = cur.fetchone()
-    peak_day   = str(peak["expense_date"]) if peak else "—"
-    peak_total = float(peak["dt"]) if peak else 0
+    days_in=calendar.monthrange(y,m)[1]
+    cur.execute("SELECT DAY(expense_date) AS d,SUM(amount) AS t FROM expenses WHERE user_id=%s AND MONTH(expense_date)=%s AND YEAR(expense_date)=%s GROUP BY DAY(expense_date)",(uid,m,y))
+    dmap={r["d"]:float(r["t"]) for r in cur.fetchall()}
+    cur.execute("SELECT DAY(income_date) AS d,SUM(amount) AS t FROM income WHERE user_id=%s AND MONTH(income_date)=%s AND YEAR(income_date)=%s GROUP BY DAY(income_date)",(uid,m,y))
+    imap={r["d"]:float(r["t"]) for r in cur.fetchall()}
+    daily_labels=list(range(1,days_in+1))
+    daily_data=[dmap.get(d,0) for d in daily_labels]
+    income_data=[imap.get(d,0) for d in daily_labels]
 
-    # Number of transactions this month
-    cur.execute("""
-        SELECT COUNT(*) AS cnt FROM expenses
-        WHERE user_id=%s AND MONTH(expense_date)=%s AND YEAR(expense_date)=%s
-    """, (user_id, month, year))
-    tx_count = cur.fetchone()["cnt"]
+    cur.execute("SELECT category,COALESCE(SUM(amount),0) AS t FROM expenses WHERE user_id=%s AND MONTH(expense_date)=%s AND YEAR(expense_date)=%s GROUP BY category ORDER BY t DESC",(uid,m,y))
+    cat_rows=cur.fetchall(); cat_labels=[r["category"] for r in cat_rows]; cat_data=[float(r["t"]) for r in cat_rows]
 
-    # Daily bar chart data (full month)
-    days_in_month = calendar.monthrange(year, month)[1]
-    cur.execute("""
-        SELECT DAY(expense_date) AS day, SUM(amount) AS total FROM expenses
-        WHERE user_id=%s AND MONTH(expense_date)=%s AND YEAR(expense_date)=%s
-        GROUP BY DAY(expense_date) ORDER BY day
-    """, (user_id, month, year))
-    daily_map    = {r["day"]: float(r["total"]) for r in cur.fetchall()}
-    daily_labels = list(range(1, days_in_month + 1))
-    daily_data   = [daily_map.get(d, 0) for d in daily_labels]
+    cur.execute("SELECT * FROM budgets WHERE user_id=%s AND month=%s AND year=%s",(uid,m,y))
+    budgets={r["category"]:float(r["amount"]) for r in cur.fetchall()}
 
-    # Category bar chart data
-    cur.execute("""
-        SELECT category, COALESCE(SUM(amount),0) AS total FROM expenses
-        WHERE user_id=%s AND MONTH(expense_date)=%s AND YEAR(expense_date)=%s
-        GROUP BY category ORDER BY total DESC
-    """, (user_id, month, year))
-    cat_rows      = cur.fetchall()
-    cat_labels    = [r["category"] for r in cat_rows]
-    cat_data      = [float(r["total"]) for r in cat_rows]
-    cat_colors_js = [CAT_COLORS.get(r["category"], "#9d8df1") for r in cat_rows]
+    cur.execute("SELECT * FROM savings_goals WHERE user_id=%s ORDER BY created_at DESC LIMIT 3",(uid,))
+    goals_raw=cur.fetchall()
+    goals=[{**g,"pct":round(min(float(g["saved_amount"])/float(g["target_amount"])*100,100),1) if float(g["target_amount"])>0 else 0} for g in goals_raw]
 
-    # Recent 5 transactions
-    cur.execute("""
-        SELECT id, title, category, amount, expense_date, note FROM expenses
-        WHERE user_id=%s ORDER BY expense_date DESC, id DESC LIMIT 5
-    """, (user_id,))
-    recent = cur.fetchall()
-
-    # Wallet balance
-    cur.execute("SELECT wallet_balance FROM users WHERE id=%s", (user_id,))
-    wallet_balance = float(cur.fetchone()["wallet_balance"])
-
+    cur.execute("""(SELECT id,'expense' AS type,title,category,amount,expense_date AS txdate,note FROM expenses WHERE user_id=%s)
+        UNION ALL (SELECT id,'income' AS type,title,category,amount,income_date AS txdate,note FROM income WHERE user_id=%s)
+        ORDER BY txdate DESC,id DESC LIMIT 6""",(uid,uid))
+    recent=cur.fetchall()
     cur.close(); conn.close()
 
     return render_template("dashboard.html",
-        total=total, avg_daily=avg_daily,
-        peak_day=peak_day, peak_total=peak_total,
-        tx_count=tx_count,
-        daily_labels=daily_labels, daily_data=daily_data,
-        cat_labels=cat_labels, cat_data=cat_data,
-        cat_colors_js=cat_colors_js,
-        recent=recent, cat_icons=CAT_ICONS,
-        month_name=today.strftime("%B %Y"),
-        days_in_month=days_in_month,
-        wallet_balance=wallet_balance
-    )
+        wallet_balance=wallet,total=total,total_income=total_income,avg_daily=avg_daily,
+        peak_day=peak_day,peak_total=peak_total,tx_count=tx_count,
+        daily_labels=daily_labels,daily_data=daily_data,income_data=income_data,
+        cat_labels=cat_labels,cat_data=cat_data,cat_colors_js=CAT_COLORS,
+        budgets=budgets,goals=goals,recent=recent,cat_icons=CAT_ICONS,
+        days_in_month=days_in, month_name=today.strftime("%B %Y"))
+
+@app.route("/add_money", methods=["GET", "POST"])
+@login_required
+def add_money():
+    uid=session["user_id"]
+    if request.method == "POST":
+        amount=float(request.form.get("amount",0))
+        if amount<=0: flash("Enter a valid amount.","danger"); return redirect(url_for("add_money"))
+        conn=get_db(); cur=conn.cursor()
+        cur.execute("UPDATE users SET wallet_balance=wallet_balance+%s WHERE id=%s",(amount,uid))
+        conn.commit(); cur.close(); conn.close()
+        flash(f"${amount:.2f} added to wallet!","success"); return redirect(url_for("dashboard"))
+    conn=get_db(); cur=conn.cursor(dictionary=True)
+    cur.execute("SELECT wallet_balance FROM users WHERE id=%s",(uid,))
+    wallet=float(cur.fetchone()["wallet_balance"] or 0)
+    cur.close(); conn.close()
+    return render_template("add_money.html", wallet_balance=wallet)
 
 
 # ─────────────────────────────────────────────
-#  EXPENSES CRUD
+#  EXPENSES  (search & filter)
 # ─────────────────────────────────────────────
-
 @app.route("/expenses")
 @login_required
 def expenses():
-    user_id = session["user_id"]
-    conn = get_db(); cur = conn.cursor(dictionary=True)
+    uid=session["user_id"]
+    q=request.args.get("q","").strip(); cat_filter=request.args.get("category","")
+    date_from=request.args.get("date_from",""); date_to=request.args.get("date_to","")
+    sort=request.args.get("sort","date_desc")
+    conn=get_db(); cur=conn.cursor(dictionary=True)
+    sql="SELECT * FROM expenses WHERE user_id=%s"; params=[uid]
+    if q: sql+=" AND (title LIKE %s OR note LIKE %s)"; params+=[f"%{q}%",f"%{q}%"]
+    if cat_filter: sql+=" AND category=%s"; params.append(cat_filter)
+    if date_from: sql+=" AND expense_date>=%s"; params.append(date_from)
+    if date_to:   sql+=" AND expense_date<=%s"; params.append(date_to)
+    order={"date_desc":"expense_date DESC,id DESC","date_asc":"expense_date ASC","amount_desc":"amount DESC","amount_asc":"amount ASC"}
+    sql+=f" ORDER BY {order.get(sort,'expense_date DESC,id DESC')}"
+    cur.execute(sql,params); rows=cur.fetchall(); cur.close(); conn.close()
+    return render_template("expenses.html",expenses=rows,categories=CATEGORIES,
+        cat_icons=CAT_ICONS,q=q,cat_filter=cat_filter,date_from=date_from,date_to=date_to,sort=sort)
 
-    # Search / filter params
-    search   = request.args.get("q", "").strip()
-    category = request.args.get("cat", "")
-    sort     = request.args.get("sort", "date_desc")
-
-    query  = "SELECT * FROM expenses WHERE user_id=%s"
-    params = [user_id]
-
-    if search:
-        query  += " AND title LIKE %s"
-        params.append(f"%{search}%")
-    if category:
-        query  += " AND category=%s"
-        params.append(category)
-
-    order_map = {
-        "date_desc":   "expense_date DESC, id DESC",
-        "date_asc":    "expense_date ASC, id ASC",
-        "amount_desc": "amount DESC",
-        "amount_asc":  "amount ASC",
-    }
-    query += f" ORDER BY {order_map.get(sort, 'expense_date DESC, id DESC')}"
-    cur.execute(query, params)
-    rows = cur.fetchall()
-    cur.close(); conn.close()
-
-    return render_template("expenses.html", expenses=rows,
-                           categories=CATEGORIES, cat_icons=CAT_ICONS,
-                           search=search, selected_cat=category, sort=sort)
-
-
-@app.route("/add", methods=["GET", "POST"])
+@app.route("/add", methods=["GET","POST"])
 @login_required
 def add_expense():
-    if request.method == "POST":
-        user_id  = session["user_id"]
-        title    = request.form["title"].strip()
-        amount   = float(request.form["amount"])
-        category = request.form["category"]
-        exp_date = request.form["expense_date"]
-        note     = request.form.get("note", "").strip()
-        conn = get_db(); cur = conn.cursor(dictionary=True)
-        cur.execute("""
-            INSERT INTO expenses (user_id, title, amount, category, expense_date, note)
-            VALUES (%s,%s,%s,%s,%s,%s)
-        """, (user_id, title, amount, category, exp_date, note))
-        # Deduct from wallet balance
-        cur.execute("UPDATE users SET wallet_balance = wallet_balance - %s WHERE id=%s",
-                    (amount, user_id))
-        conn.commit()
-        # Warn if wallet goes negative
-        cur.execute("SELECT wallet_balance FROM users WHERE id=%s", (user_id,))
-        new_bal = float(cur.fetchone()["wallet_balance"])
-        cur.close(); conn.close()
-        flash("Expense added! 💸", "success")
-        if new_bal < 0:
-            flash(f"⚠️ Wallet balance is now ${new_bal:,.2f}. Top up your wallet!", "warning")
-        return redirect(url_for("expenses"))
-    return render_template("add_expense.html",
-                           categories=CATEGORIES, cat_icons=CAT_ICONS,
-                           today=date.today().isoformat())
-
-
-@app.route("/edit/<int:expense_id>", methods=["GET", "POST"])
-@login_required
-def edit_expense(expense_id):
-    user_id = session["user_id"]
-    conn = get_db(); cur = conn.cursor(dictionary=True)
-    if request.method == "POST":
-        # Get old amount to adjust wallet balance
-        cur.execute("SELECT amount FROM expenses WHERE id=%s AND user_id=%s", (expense_id, user_id))
-        old_row = cur.fetchone()
-        new_amount = float(request.form["amount"])
-        cur.execute("""
-            UPDATE expenses SET title=%s, amount=%s, category=%s,
-                                expense_date=%s, note=%s
-            WHERE id=%s AND user_id=%s
-        """, (request.form["title"].strip(), new_amount,
-              request.form["category"], request.form["expense_date"],
-              request.form.get("note", "").strip(), expense_id, user_id))
-        if old_row:
-            diff = new_amount - float(old_row["amount"])
-            cur.execute("UPDATE users SET wallet_balance = wallet_balance - %s WHERE id=%s",
-                        (diff, user_id))
+    if request.method=="POST":
+        uid=session["user_id"]
+        conn=get_db(); cur=conn.cursor()
+        amount=float(request.form["amount"])
+        cur.execute("INSERT INTO expenses (user_id,title,amount,category,expense_date,note) VALUES(%s,%s,%s,%s,%s,%s)",
+            (uid,request.form["title"].strip(),amount,request.form["category"],
+             request.form["expense_date"],request.form.get("note","").strip()))
+        if request.form.get("deduct_wallet"):
+            cur.execute("UPDATE users SET wallet_balance=GREATEST(wallet_balance-%s,0) WHERE id=%s",(amount,uid))
         conn.commit(); cur.close(); conn.close()
-        flash("Expense updated! ✅", "success")
-        return redirect(url_for("expenses"))
+        flash("Expense added!","success"); return redirect(url_for("expenses"))
+    return render_template("add_expense.html",categories=CATEGORIES,today=date.today().isoformat())
 
-    cur.execute("SELECT * FROM expenses WHERE id=%s AND user_id=%s", (expense_id, user_id))
-    expense = cur.fetchone()
-    cur.close(); conn.close()
-    if not expense:
-        flash("Expense not found.", "danger")
-        return redirect(url_for("expenses"))
-    return render_template("add_expense.html", expense=expense,
-                           categories=CATEGORIES, cat_icons=CAT_ICONS,
-                           today=date.today().isoformat())
-
-
-@app.route("/delete/<int:expense_id>", methods=["POST"])
+@app.route("/edit/<int:eid>", methods=["GET","POST"])
 @login_required
-def delete_expense(expense_id):
-    user_id = session["user_id"]
-    conn = get_db(); cur = conn.cursor(dictionary=True)
-    # Fetch amount to refund to wallet
-    cur.execute("SELECT amount, title FROM expenses WHERE id=%s AND user_id=%s", (expense_id, user_id))
-    exp = cur.fetchone()
-    cur.execute("DELETE FROM expenses WHERE id=%s AND user_id=%s", (expense_id, user_id))
-    if exp:
-        cur.execute("UPDATE users SET wallet_balance = wallet_balance + %s WHERE id=%s",
-                    (float(exp["amount"]), user_id))
-    conn.commit(); cur.close(); conn.close()
-    flash("Expense deleted. 💰 Amount refunded to wallet.", "info")
-    return redirect(url_for("expenses"))
+def edit_expense(eid):
+    uid=session["user_id"]; conn=get_db(); cur=conn.cursor(dictionary=True)
+    if request.method=="POST":
+        cur.execute("UPDATE expenses SET title=%s,amount=%s,category=%s,expense_date=%s,note=%s WHERE id=%s AND user_id=%s",
+            (request.form["title"].strip(),float(request.form["amount"]),request.form["category"],
+             request.form["expense_date"],request.form.get("note","").strip(),eid,uid))
+        conn.commit(); cur.close(); conn.close(); flash("Updated!","success"); return redirect(url_for("expenses"))
+    cur.execute("SELECT * FROM expenses WHERE id=%s AND user_id=%s",(eid,uid))
+    expense=cur.fetchone(); cur.close(); conn.close()
+    if not expense: flash("Not found.","danger"); return redirect(url_for("expenses"))
+    return render_template("add_expense.html",expense=expense,categories=CATEGORIES,today=date.today().isoformat())
 
-
-# ─────────────────────────────────────────────
-#  WALLET
-# ─────────────────────────────────────────────
-
-@app.route("/add-money", methods=["GET", "POST"])
+@app.route("/delete/<int:eid>", methods=["POST"])
 @login_required
-def add_money():
-    user_id = session["user_id"]
-    conn = get_db(); cur = conn.cursor(dictionary=True)
+def delete_expense(eid):
+    uid=session["user_id"]; conn=get_db(); cur=conn.cursor()
+    cur.execute("DELETE FROM expenses WHERE id=%s AND user_id=%s",(eid,uid))
+    conn.commit(); cur.close(); conn.close(); flash("Deleted.","info"); return redirect(url_for("expenses"))
 
-    if request.method == "POST":
-        amount = float(request.form["amount"])
-        if amount <= 0:
-            flash("Amount must be greater than zero.", "danger")
-            return redirect(url_for("add_money"))
-        cur.execute("UPDATE users SET wallet_balance = wallet_balance + %s WHERE id=%s",
-                    (amount, user_id))
-        conn.commit()
-        cur.execute("SELECT wallet_balance FROM users WHERE id=%s", (user_id,))
-        new_bal = float(cur.fetchone()["wallet_balance"])
-        cur.close(); conn.close()
-        flash(f"${amount:,.2f} added to your wallet! 💰 New balance: ${new_bal:,.2f}", "success")
-        return redirect(url_for("dashboard"))
 
-    cur.execute("SELECT wallet_balance FROM users WHERE id=%s", (user_id,))
-    wallet_balance = float(cur.fetchone()["wallet_balance"])
+# ─────────────────────────────────────────────
+#  INCOME
+# ─────────────────────────────────────────────
+@app.route("/income")
+@login_required
+def income_list():
+    uid=session["user_id"]; conn=get_db(); cur=conn.cursor(dictionary=True)
+    cur.execute("SELECT * FROM income WHERE user_id=%s ORDER BY income_date DESC,id DESC",(uid,))
+    rows=cur.fetchall(); cur.close(); conn.close()
+    return render_template("income.html",income_list=rows,categories=INCOME_CATS)
+
+@app.route("/income/add", methods=["GET","POST"])
+@login_required
+def add_income():
+    if request.method=="POST":
+        uid=session["user_id"]; amount=float(request.form["amount"])
+        conn=get_db(); cur=conn.cursor()
+        cur.execute("INSERT INTO income (user_id,title,amount,category,income_date,note) VALUES(%s,%s,%s,%s,%s,%s)",
+            (uid,request.form["title"].strip(),amount,request.form["category"],request.form["income_date"],request.form.get("note","").strip()))
+        if request.form.get("add_to_wallet"):
+            cur.execute("UPDATE users SET wallet_balance=wallet_balance+%s WHERE id=%s",(amount,uid))
+        conn.commit(); cur.close(); conn.close(); flash("Income recorded!","success"); return redirect(url_for("income_list"))
+    return render_template("add_income.html",categories=INCOME_CATS,today=date.today().isoformat())
+
+@app.route("/income/delete/<int:iid>", methods=["POST"])
+@login_required
+def delete_income(iid):
+    uid=session["user_id"]; conn=get_db(); cur=conn.cursor()
+    cur.execute("DELETE FROM income WHERE id=%s AND user_id=%s",(iid,uid))
+    conn.commit(); cur.close(); conn.close(); flash("Deleted.","info"); return redirect(url_for("income_list"))
+
+
+# ─────────────────────────────────────────────
+#  BUDGET PLANNER
+# ─────────────────────────────────────────────
+@app.route("/budget")
+@login_required
+def budget():
+    uid=session["user_id"]; today=date.today(); m,y=today.month,today.year
+    conn=get_db(); cur=conn.cursor(dictionary=True)
+    cur.execute("SELECT * FROM budgets WHERE user_id=%s AND month=%s AND year=%s",(uid,m,y))
+    budgets={r["category"]:float(r["amount"]) for r in cur.fetchall()}
+    cur.execute("SELECT category,COALESCE(SUM(amount),0) AS spent FROM expenses WHERE user_id=%s AND MONTH(expense_date)=%s AND YEAR(expense_date)=%s GROUP BY category",(uid,m,y))
+    spent={r["category"]:float(r["spent"]) for r in cur.fetchall()}
     cur.close(); conn.close()
-    return render_template("add_money.html", wallet_balance=wallet_balance)
+    rows=[{"category":c,"icon":CAT_ICONS[c],"budget":budgets.get(c,0),"spent":spent.get(c,0),
+           "pct":round(min(spent.get(c,0)/budgets[c]*100,100),1) if budgets.get(c,0)>0 else 0,
+           "over":spent.get(c,0)>budgets.get(c,0)>0} for c in CATEGORIES]
+    return render_template("budget.html",rows=rows,categories=CATEGORIES,month_name=today.strftime("%B %Y"),m=m,y=y)
+
+@app.route("/budget/save", methods=["POST"])
+@login_required
+def save_budget():
+    uid=session["user_id"]; today=date.today(); m,y=today.month,today.year
+    conn=get_db(); cur=conn.cursor()
+    for cat in CATEGORIES:
+        val=request.form.get(f"budget_{cat}","").strip()
+        if val:
+            cur.execute("INSERT INTO budgets (user_id,category,month,year,amount) VALUES(%s,%s,%s,%s,%s) ON DUPLICATE KEY UPDATE amount=%s",
+                        (uid,cat,m,y,float(val),float(val)))
+    conn.commit(); cur.close(); conn.close(); flash("Budgets saved!","success"); return redirect(url_for("budget"))
 
 
 # ─────────────────────────────────────────────
-#  API ENDPOINTS
+#  SAVINGS GOALS
 # ─────────────────────────────────────────────
+@app.route("/goals")
+@login_required
+def goals():
+    uid=session["user_id"]; conn=get_db(); cur=conn.cursor(dictionary=True)
+    cur.execute("SELECT * FROM savings_goals WHERE user_id=%s ORDER BY created_at DESC",(uid,))
+    raw=cur.fetchall(); cur.close(); conn.close()
+    data=[{**g,"pct":round(min(float(g["saved_amount"])/float(g["target_amount"])*100,100),1) if float(g["target_amount"])>0 else 0,
+            "remaining":max(float(g["target_amount"])-float(g["saved_amount"]),0)} for g in raw]
+    return render_template("goals.html",goals=data,goal_icons=GOAL_ICONS)
 
+@app.route("/goals/add", methods=["POST"])
+@login_required
+def add_goal():
+    uid=session["user_id"]; conn=get_db(); cur=conn.cursor()
+    cur.execute("INSERT INTO savings_goals (user_id,title,target_amount,deadline,icon) VALUES(%s,%s,%s,%s,%s)",
+        (uid,request.form["title"].strip(),float(request.form["target_amount"]),
+         request.form.get("deadline") or None,request.form.get("icon","🎯")))
+    conn.commit(); cur.close(); conn.close(); flash("Goal created!","success"); return redirect(url_for("goals"))
+
+@app.route("/goals/deposit/<int:gid>", methods=["POST"])
+@login_required
+def goal_deposit(gid):
+    uid=session["user_id"]; amount=float(request.form.get("amount",0))
+    conn=get_db(); cur=conn.cursor()
+    cur.execute("UPDATE savings_goals SET saved_amount=LEAST(saved_amount+%s,target_amount) WHERE id=%s AND user_id=%s",(amount,gid,uid))
+    if request.form.get("deduct_wallet"):
+        cur.execute("UPDATE users SET wallet_balance=GREATEST(wallet_balance-%s,0) WHERE id=%s",(amount,uid))
+    conn.commit(); cur.close(); conn.close(); flash(f"${amount:.2f} added to goal!","success"); return redirect(url_for("goals"))
+
+@app.route("/goals/delete/<int:gid>", methods=["POST"])
+@login_required
+def delete_goal(gid):
+    uid=session["user_id"]; conn=get_db(); cur=conn.cursor()
+    cur.execute("DELETE FROM savings_goals WHERE id=%s AND user_id=%s",(gid,uid))
+    conn.commit(); cur.close(); conn.close(); flash("Goal deleted.","info"); return redirect(url_for("goals"))
+
+
+# ─────────────────────────────────────────────
+#  RECURRING EXPENSES
+# ─────────────────────────────────────────────
+@app.route("/recurring")
+@login_required
+def recurring():
+    uid=session["user_id"]; conn=get_db(); cur=conn.cursor(dictionary=True)
+    cur.execute("SELECT * FROM recurring_expenses WHERE user_id=%s ORDER BY day_of_month",(uid,))
+    rows=cur.fetchall(); cur.close(); conn.close()
+    return render_template("recurring.html",recurring=rows,categories=CATEGORIES,cat_icons=CAT_ICONS)
+
+@app.route("/recurring/add", methods=["POST"])
+@login_required
+def add_recurring():
+    uid=session["user_id"]; conn=get_db(); cur=conn.cursor()
+    cur.execute("INSERT INTO recurring_expenses (user_id,title,amount,category,day_of_month,note) VALUES(%s,%s,%s,%s,%s,%s)",
+        (uid,request.form["title"].strip(),float(request.form["amount"]),
+         request.form["category"],int(request.form["day_of_month"]),request.form.get("note","").strip()))
+    conn.commit(); cur.close(); conn.close(); flash("Recurring expense added!","success"); return redirect(url_for("recurring"))
+
+@app.route("/recurring/toggle/<int:rid>", methods=["POST"])
+@login_required
+def toggle_recurring(rid):
+    uid=session["user_id"]; conn=get_db(); cur=conn.cursor()
+    cur.execute("UPDATE recurring_expenses SET is_active=NOT is_active WHERE id=%s AND user_id=%s",(rid,uid))
+    conn.commit(); cur.close(); conn.close(); return redirect(url_for("recurring"))
+
+@app.route("/recurring/delete/<int:rid>", methods=["POST"])
+@login_required
+def delete_recurring(rid):
+    uid=session["user_id"]; conn=get_db(); cur=conn.cursor()
+    cur.execute("DELETE FROM recurring_expenses WHERE id=%s AND user_id=%s",(rid,uid))
+    conn.commit(); cur.close(); conn.close(); flash("Removed.","info"); return redirect(url_for("recurring"))
+
+
+# ─────────────────────────────────────────────
+#  EXPORT CSV
+# ─────────────────────────────────────────────
+@app.route("/export/csv")
+@login_required
+def export_csv():
+    uid=session["user_id"]; date_from=request.args.get("from",""); date_to=request.args.get("to","")
+    conn=get_db(); cur=conn.cursor(dictionary=True)
+    sql="SELECT title,category,amount,expense_date,note FROM expenses WHERE user_id=%s"; params=[uid]
+    if date_from: sql+=" AND expense_date>=%s"; params.append(date_from)
+    if date_to:   sql+=" AND expense_date<=%s"; params.append(date_to)
+    sql+=" ORDER BY expense_date DESC"
+    cur.execute(sql,params); rows=cur.fetchall(); cur.close(); conn.close()
+    si=io.StringIO(); w=csv.writer(si)
+    w.writerow(["Date","Title","Category","Amount","Note"])
+    for r in rows: w.writerow([r["expense_date"],r["title"],r["category"],f"${r['amount']:.2f}",r["note"] or ""])
+    return Response(si.getvalue(),mimetype="text/csv",
+        headers={"Content-Disposition":f"attachment;filename=expenses_{date.today()}.csv"})
+
+@app.route("/export/income-csv")
+@login_required
+def export_income_csv():
+    uid=session["user_id"]; conn=get_db(); cur=conn.cursor(dictionary=True)
+    cur.execute("SELECT title,category,amount,income_date,note FROM income WHERE user_id=%s ORDER BY income_date DESC",(uid,))
+    rows=cur.fetchall(); cur.close(); conn.close()
+    si=io.StringIO(); w=csv.writer(si)
+    w.writerow(["Date","Title","Category","Amount","Note"])
+    for r in rows: w.writerow([r["income_date"],r["title"],r["category"],f"${r['amount']:.2f}",r["note"] or ""])
+    return Response(si.getvalue(),mimetype="text/csv",
+        headers={"Content-Disposition":f"attachment;filename=income_{date.today()}.csv"})
+
+
+# ─────────────────────────────────────────────
+#  API
+# ─────────────────────────────────────────────
 @app.route("/api/daily")
 @login_required
 def api_daily():
-    """Returns daily expense totals for the current month up to `days` days."""
-    user_id     = session["user_id"]
-    days        = int(request.args.get("days", 30))
-    today       = date.today()
-    month, year = today.month, today.year
-    conn = get_db(); cur = conn.cursor(dictionary=True)
-    cur.execute("""
-        SELECT DAY(expense_date) AS day, SUM(amount) AS total FROM expenses
-        WHERE user_id=%s AND MONTH(expense_date)=%s
-          AND YEAR(expense_date)=%s AND DAY(expense_date)<=%s
-        GROUP BY DAY(expense_date) ORDER BY day
-    """, (user_id, month, year, days))
-    rows      = cur.fetchall()
+    uid=session["user_id"]; days=int(request.args.get("days",30))
+    today=date.today(); m,y=today.month,today.year
+    conn=get_db(); cur=conn.cursor(dictionary=True)
+    cur.execute("SELECT DAY(expense_date) AS d,SUM(amount) AS t FROM expenses WHERE user_id=%s AND MONTH(expense_date)=%s AND YEAR(expense_date)=%s AND DAY(expense_date)<=%s GROUP BY DAY(expense_date)",(uid,m,y,days))
+    emap={r["d"]:float(r["t"]) for r in cur.fetchall()}
+    cur.execute("SELECT DAY(income_date) AS d,SUM(amount) AS t FROM income WHERE user_id=%s AND MONTH(income_date)=%s AND YEAR(income_date)=%s AND DAY(income_date)<=%s GROUP BY DAY(income_date)",(uid,m,y,days))
+    imap={r["d"]:float(r["t"]) for r in cur.fetchall()}
     cur.close(); conn.close()
-    daily_map = {r["day"]: float(r["total"]) for r in rows}
-    labels    = list(range(1, days + 1))
-    return jsonify({
-        "labels": labels,
-        "data": [daily_map.get(d, 0) for d in labels]
-    })
-
-
-@app.route("/api/summary")
-@login_required
-def api_summary():
-    """Returns monthly summary stats as JSON."""
-    user_id     = session["user_id"]
-    today       = date.today()
-    month, year = today.month, today.year
-    conn = get_db(); cur = conn.cursor(dictionary=True)
-
-    cur.execute("""
-        SELECT COALESCE(SUM(amount),0) AS total FROM expenses
-        WHERE user_id=%s AND MONTH(expense_date)=%s AND YEAR(expense_date)=%s
-    """, (user_id, month, year))
-    total = float(cur.fetchone()["total"])
-
-    cur.execute("""
-        SELECT category, COALESCE(SUM(amount),0) AS cat_total FROM expenses
-        WHERE user_id=%s AND MONTH(expense_date)=%s AND YEAR(expense_date)=%s
-        GROUP BY category ORDER BY cat_total DESC LIMIT 1
-    """, (user_id, month, year))
-    top_cat_row = cur.fetchone()
-    top_cat = top_cat_row["category"] if top_cat_row else "—"
-
-    cur.close(); conn.close()
-    return jsonify({"total": total, "top_category": top_cat})
+    labels=list(range(1,days+1))
+    return jsonify({"labels":labels,"expenses":[emap.get(d,0) for d in labels],"income":[imap.get(d,0) for d in labels]})
 
 
 # ─────────────────────────────────────────────
-#  DEBUG ROUTES (remove in production)
+#  DEBUG
 # ─────────────────────────────────────────────
-
 @app.route("/test-email")
 def test_email():
-    """Visit: /test-email?to=your@email.com to test SMTP config."""
-    to = request.args.get("to", "")
-    if not to:
-        return "<p>Usage: <code>/test-email?to=your@email.com</code></p>", 400
-    ok = send_email(
-        to,
-        "Finance Tracker — Test Email ✅",
-        "<div style='font-family:sans-serif;padding:24px'>"
-        "<h2 style='color:#7F77DD'>It works! 🎉</h2>"
-        "<p>Your Finance Tracker SMTP config is correctly set up.</p></div>"
-    )
-    if ok:
-        return (f"<h3 style='color:green;font-family:sans-serif'>✓ Email sent to {to}!</h3>"
-                f"<p style='font-family:sans-serif'>Check your inbox (and spam folder).</p>")
-    return ("<h3 style='color:red;font-family:sans-serif'>✗ Email failed.</h3>"
-            "<p style='font-family:sans-serif'>Check your terminal for the exact error.<br>"
-            "Most likely: wrong App Password or 2FA not enabled on Gmail.</p>"), 500
+    to=request.args.get("to","")
+    if not to: return "Usage: /test-email?to=your@email.com",400
+    ok=send_email(to,"Finance App Test","<h2>It works!</h2>")
+    return (f"<h3 style='color:green'>Sent to {to}!</h3>" if ok else "<h3 style='color:red'>Failed. Check terminal.</h3>"),200 if ok else 500
 
-
-@app.route("/dev-verify/<int:user_id>")
-def dev_verify(user_id):
-    """DEV ONLY: Manually verify a user by ID without email."""
-    conn = get_db(); cur = conn.cursor()
-    cur.execute("UPDATE users SET is_verified=1 WHERE id=%s", (user_id,))
+@app.route("/debug-verify")
+def debug_verify():
+    if not app.debug: return "Not available",403
+    email=request.args.get("email","").strip().lower()
+    if not email: return "Usage: /debug-verify?email=...",400
+    conn=get_db()
+    if not conn: return "Database connection failed.", 500
+    cur=conn.cursor(dictionary=True)
+    cur.execute("SELECT * FROM users WHERE email=%s",(email,))
+    user=cur.fetchone()
+    if not user: cur.close(); conn.close(); return f"No user: {email}",404
+    cur.execute("UPDATE users SET is_verified=1 WHERE id=%s",(user["id"],))
     conn.commit(); cur.close(); conn.close()
-    flash(f"User {user_id} manually verified! You can now log in.", "success")
-    return redirect(url_for("login"))
+    return f"<h3 style='color:green'>{user['name']} verified!</h3><p><a href='/login'>Login</a></p>"
 
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    app.run(debug=True)

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Income — Finance App{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div><h2>Income</h2><p class="page-sub">{{ income_list|length }} records</p></div>
+  <div style="display:flex;gap:8px">
+    <a href="{{ url_for('export_income_csv') }}" class="btn-secondary">⬇ CSV</a>
+    <a href="{{ url_for('add_income') }}" class="btn-primary">+ Add Income</a>
+  </div>
+</div>
+{% if income_list %}
+<div class="table-card">
+  <table class="expense-table">
+    <thead><tr><th>Date</th><th>Title</th><th>Category</th><th>Note</th><th class="text-right">Amount</th><th class="text-center">Action</th></tr></thead>
+    <tbody>
+    {% for i in income_list %}
+    <tr>
+      <td class="td-date">{{ i.income_date }}</td>
+      <td class="td-title">{{ i.title }}</td>
+      <td><span class="cat-badge cat-badge-green">{{ i.category }}</span></td>
+      <td class="td-note">{{ i.note or '—' }}</td>
+      <td class="text-right" style="color:#1D9E75;font-weight:600">+${{ "%.2f"|format(i.amount) }}</td>
+      <td class="text-center">
+        <form method="POST" action="{{ url_for('delete_income',iid=i.id) }}" onsubmit="return confirm('Delete?')">
+          <button type="submit" class="btn-delete">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="empty-card"><div class="empty-icon">💵</div><p>No income recorded.</p><a href="{{ url_for('add_income') }}" class="btn-primary">Add income</a></div>
+{% endif %}
+{% endblock %}

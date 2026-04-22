@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Recurring Expenses — Finance App{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div><h2>Recurring Expenses</h2><p class="page-sub">Auto-applied every month on their due day</p></div>
+  <button onclick="document.getElementById('addRecModal').style.display='flex'" class="btn-primary">+ Add Recurring</button>
+</div>
+
+{% if recurring %}
+<div class="table-card">
+  <table class="expense-table">
+    <thead><tr><th>Day</th><th>Title</th><th>Category</th><th>Note</th><th class="text-right">Amount</th><th>Status</th><th class="text-center">Actions</th></tr></thead>
+    <tbody>
+    {% for r in recurring %}
+    <tr style="{% if not r.is_active %}opacity:0.5{% endif %}">
+      <td><span style="font-size:13px;font-weight:600;color:var(--purple-400)">{{ r.day_of_month }}</span><span style="font-size:10px;color:var(--text-3)">th</span></td>
+      <td class="td-title">{{ r.title }}</td>
+      <td><span class="cat-badge">{{ cat_icons.get(r.category,'💳') }} {{ r.category }}</span></td>
+      <td class="td-note">{{ r.note or '—' }}</td>
+      <td class="text-right td-amount">${{ "%.2f"|format(r.amount) }}</td>
+      <td>
+        <form method="POST" action="{{ url_for('toggle_recurring',rid=r.id) }}">
+          <button type="submit" class="{% if r.is_active %}btn-edit{% else %}btn-secondary{% endif %}" style="font-size:11px;padding:3px 10px">
+            {{ 'Active' if r.is_active else 'Paused' }}
+          </button>
+        </form>
+      </td>
+      <td class="text-center">
+        <form method="POST" action="{{ url_for('delete_recurring',rid=r.id) }}" onsubmit="return confirm('Delete?')">
+          <button type="submit" class="btn-delete">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="empty-card"><div class="empty-icon">🔄</div><p>No recurring expenses set up.</p><button onclick="document.getElementById('addRecModal').style.display='flex'" class="btn-primary">Add one</button></div>
+{% endif %}
+
+<div class="chart-card" style="margin-top:16px">
+  <p style="font-size:13px;color:var(--text-2);line-height:1.7">
+    <strong>How it works:</strong> When you log in, any active recurring expense whose day has passed this month is automatically inserted into your expenses. The <em>last applied</em> date prevents duplicates.
+  </p>
+</div>
+
+<!-- Add recurring modal -->
+<div id="addRecModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:999;align-items:center;justify-content:center" onclick="if(event.target===this)this.style.display='none'">
+  <div style="background:var(--bg-card);border-radius:var(--radius-lg);padding:28px;width:380px">
+    <h3 style="margin-bottom:16px">Add Recurring Expense</h3>
+    <form method="POST" action="{{ url_for('add_recurring') }}">
+      <div class="form-row" style="margin-bottom:12px">
+        <div class="form-group"><label>Title</label><input type="text" name="title" placeholder="Netflix, Rent..." required/></div>
+        <div class="form-group"><label>Amount ($)</label><input type="number" name="amount" placeholder="0.00" step="0.01" min="0.01" required/></div>
+      </div>
+      <div class="form-row" style="margin-bottom:12px">
+        <div class="form-group"><label>Category</label>
+          <select name="category">{% for c in categories %}<option>{{ c }}</option>{% endfor %}</select>
+        </div>
+        <div class="form-group"><label>Day of month</label>
+          <input type="number" name="day_of_month" placeholder="1–28" min="1" max="28" required/>
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:16px"><label>Note <span class="label-optional">(optional)</span></label><input type="text" name="note" placeholder=""/></div>
+      <div style="display:flex;gap:8px">
+        <button type="button" onclick="document.getElementById('addRecModal').style.display='none'" class="btn-secondary" style="flex:1">Cancel</button>
+        <button type="submit" class="btn-primary" style="flex:1">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

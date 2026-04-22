@@ -20,7 +20,7 @@
     <option value="">All Categories</option>
     {% for cat in categories %}
     <option value="{{ cat }}" {% if selected_cat == cat %}selected{% endif %}>
-      {{ cat_icons[cat] }} {{ cat }}
+      {{ cat_icons.get(cat, '💳') }} {{ cat }}
     </option>
     {% endfor %}
   </select>

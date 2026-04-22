@@ -36,14 +36,14 @@
       <!-- Category -->
       <div class="form-group">
         <label for="category">Category</label>
-        <select id="category" name="category" required>
+        <input list="category-options" id="category" name="category" 
+               placeholder="e.g. Food or a custom category" 
+               value="{{ expense.category if expense else '' }}" required autocomplete="off"/>
+        <datalist id="category-options">
           {% for cat in categories %}
-          <option value="{{ cat }}"
-            {% if expense and expense.category == cat %}selected{% endif %}>
-            {{ cat_icons.get(cat, '') }} {{ cat }}
-          </option>
+          <option value="{{ cat }}">{{ cat_icons.get(cat, '') }} {{ cat }}</option>
           {% endfor %}
-        </select>
+        </datalist>
       </div>
       <!-- Date -->
       <div class="form-group">
@@ -64,6 +64,15 @@
                 placeholder="Any extra detail about this expense…"
                 rows="3">{{ expense.note if expense else '' }}</textarea>
     </div>
+
+    {% if not expense %}
+    <div class="form-group">
+      <label style="flex-direction:row;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" name="deduct_wallet" value="1" style="width:auto" checked/>
+        Deduct this expense from my wallet balance
+      </label>
+    </div>
+    {% endif %}
 
     <div class="form-actions">
       <a href="{{ url_for('expenses') }}" class="btn-secondary">Cancel</a>

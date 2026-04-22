@@ -1,62 +1,34 @@
 {% extends "base.html" %}
 {% block title %}{{ 'Edit' if expense else 'Add' }} Expense — Finance App{% endblock %}
-
 {% block content %}
 <div class="page-header">
-  <div>
-    <h2>{{ 'Edit Expense' if expense else 'Add Expense' }}</h2>
-    <p class="page-sub">{{ 'Update the details below' if expense else 'Record a new expense' }}</p>
-  </div>
-  <a href="{{ url_for('expenses') }}" class="btn-secondary">&#8592; Back</a>
+  <div><h2>{{ 'Edit Expense' if expense else 'Add Expense' }}</h2><p class="page-sub">{{ 'Update the details' if expense else 'Record a new expense' }}</p></div>
+  <a href="{{ url_for('expenses') }}" class="btn-secondary">← Back</a>
 </div>
-
 <div class="form-card">
-  <form method="POST"
-        action="{{ url_for('edit_expense', expense_id=expense.id) if expense else url_for('add_expense') }}">
-
+  <form method="POST" action="{{ url_for('edit_expense',eid=expense.id) if expense else url_for('add_expense') }}">
     <div class="form-row">
-      <div class="form-group">
-        <label for="title">Title</label>
-        <input type="text" id="title" name="title" placeholder="e.g. Grocery run"
-               value="{{ expense.title if expense else '' }}" required maxlength="150"/>
-      </div>
-      <div class="form-group">
-        <label for="amount">Amount ($)</label>
-        <input type="number" id="amount" name="amount" placeholder="0.00" step="0.01" min="0.01"
-               value="{{ expense.amount if expense else '' }}" required/>
-      </div>
+      <div class="form-group"><label>Title</label><input type="text" name="title" placeholder="e.g. Grocery run" value="{{ expense.title if expense else '' }}" required maxlength="150"/></div>
+      <div class="form-group"><label>Amount ($)</label><input type="number" name="amount" placeholder="0.00" step="0.01" min="0.01" value="{{ expense.amount if expense else '' }}" required/></div>
     </div>
-
     <div class="form-row">
-      <div class="form-group">
-        <label for="category">Category</label>
-        <select id="category" name="category" required>
-          {% for cat in categories %}
-          <option value="{{ cat }}"
-            {% if expense and expense.category == cat %}selected{% endif %}>
-            {{ cat }}
-          </option>
-          {% endfor %}
-        </select>
+      <div class="form-group"><label>Category</label>
+        <select name="category" required>{% for c in categories %}<option {% if expense and expense.category==c %}selected{% endif %}>{{ c }}</option>{% endfor %}</select>
       </div>
-      <div class="form-group">
-        <label for="expense_date">Date</label>
-        <input type="date" id="expense_date" name="expense_date"
-               value="{{ expense.expense_date if expense else today }}"
-               max="{{ today }}" required/>
-      </div>
+      <div class="form-group"><label>Date</label><input type="date" name="expense_date" value="{{ expense.expense_date if expense else today }}" max="{{ today }}" required/></div>
     </div>
-
+    <div class="form-group"><label>Note <span class="label-optional">(optional)</span></label><textarea name="note" rows="2" placeholder="Any details...">{{ expense.note if expense else '' }}</textarea></div>
+    {% if not expense %}
     <div class="form-group">
-      <label for="note">Note <span class="label-optional">(optional)</span></label>
-      <textarea id="note" name="note" placeholder="Any extra details..." rows="3">{{ expense.note if expense else '' }}</textarea>
+      <label style="flex-direction:row;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" name="deduct_wallet" value="1" style="width:auto"/>
+        Deduct from wallet balance
+      </label>
     </div>
-
+    {% endif %}
     <div class="form-actions">
       <a href="{{ url_for('expenses') }}" class="btn-secondary">Cancel</a>
-      <button type="submit" class="btn-primary">
-        {{ 'Update Expense' if expense else 'Save Expense' }}
-      </button>
+      <button type="submit" class="btn-primary">{{ 'Update' if expense else 'Save Expense' }}</button>
     </div>
   </form>
 </div>
