@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>{% block title %}Finance Dashboard{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js" defer></script>
+</head>
+<body>
+
+{% if session.user_id %}
+<nav class="navbar">
+  <div class="nav-brand">
+    <span class="nav-logo">&#9670;</span>
+    <span>FinanceApp</span>
+  </div>
+  <div class="nav-links">
+    <a href="{{ url_for('dashboard') }}" class="{% if request.endpoint == 'dashboard' %}active{% endif %}">Dashboard</a>
+    <a href="{{ url_for('expenses') }}"  class="{% if request.endpoint in ['expenses','add_expense','edit_expense'] %}active{% endif %}">Expenses</a>
+    <a href="{{ url_for('add_expense') }}" class="btn-nav-add">+ Add</a>
+  </div>
+  <div class="nav-user">
+    <div class="nav-avatar">{{ session.user_name[0].upper() }}</div>
+    <span class="nav-name">{{ session.user_name }}</span>
+    <a href="{{ url_for('logout') }}" class="nav-logout">Logout</a>
+  </div>
+</nav>
+{% endif %}
+
+<div class="{% if session.user_id %}main-content{% else %}auth-wrapper{% endif %}">
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div class="flash-container">
+        {% for cat, msg in messages %}
+          <div class="flash flash-{{ cat }}">
+            <span>{{ msg }}</span>
+            <button onclick="this.parentElement.remove()">&#x2715;</button>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  {% block content %}{% endblock %}
+</div>
+
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

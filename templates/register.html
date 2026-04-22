@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Create Account — FinanceApp{% endblock %}
+
+{% block content %}
+<div class="auth-card">
+  <div class="auth-header">
+    <div class="auth-logo">&#10022;</div>
+    <h1>Create account</h1>
+    <p>Start tracking your expenses today</p>
+  </div>
+
+  <form method="POST" action="{{ url_for('register') }}" class="auth-form" id="register-form">
+    <!-- Full name -->
+    <div class="form-group">
+      <label for="name">Full name</label>
+      <input type="text" id="name" name="name"
+             placeholder="John Doe"
+             required autocomplete="name" minlength="2" autofocus/>
+    </div>
+
+    <!-- Email -->
+    <div class="form-group">
+      <label for="email">Email address</label>
+      <input type="email" id="email" name="email"
+             placeholder="you@example.com"
+             required autocomplete="email"/>
+    </div>
+
+    <!-- Password -->
+    <div class="form-group">
+      <label for="password">Password</label>
+      <div class="input-password">
+        <input type="password" id="password" name="password"
+               placeholder="Min 8 characters"
+               required minlength="8" autocomplete="new-password"
+               oninput="checkStrength(this.value)"/>
+        <button type="button" class="eye-btn"
+                onclick="togglePw('password', this)" aria-label="Toggle">
+          &#128065;
+        </button>
+      </div>
+      <div class="strength-bar">
+        <div id="strengthFill" class="strength-fill"></div>
+      </div>
+      <span id="strengthLabel" class="strength-label"></span>
+    </div>
+
+    <!-- Confirm password -->
+    <div class="form-group">
+      <label for="confirm_password">Confirm password</label>
+      <div class="input-password">
+        <input type="password" id="confirm_password" name="confirm_password"
+               placeholder="••••••••" required autocomplete="new-password"/>
+        <button type="button" class="eye-btn"
+                onclick="togglePw('confirm_password', this)" aria-label="Toggle">
+          &#128065;
+        </button>
+      </div>
+    </div>
+
+    <button type="submit" class="btn-primary btn-full" id="register-btn">
+      Create account
+    </button>
+  </form>
+
+  <p class="auth-switch">
+    Already have an account? <a href="{{ url_for('login') }}">Sign in</a>
+  </p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.getElementById('register-form').addEventListener('submit', function(e) {
+    const pwd = document.getElementById('password').value;
+    const confirm = document.getElementById('confirm_password').value;
+    if (pwd !== confirm) {
+      e.preventDefault();
+      alert("Passwords do not match. Please try again.");
+    }
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Expenses — Finance App{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h2>All Expenses</h2>
+    <p class="page-sub">{{ expenses|length }} record{{ 's' if expenses|length != 1 }}</p>
+  </div>
+  <a href="{{ url_for('add_expense') }}" class="btn-primary">+ Add Expense</a>
+</div>
+
+{% if expenses %}
+<div class="table-card">
+  <table class="expense-table">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Title</th>
+        <th>Category</th>
+        <th>Note</th>
+        <th class="text-right">Amount</th>
+        <th class="text-center">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for e in expenses %}
+      <tr>
+        <td class="td-date">{{ e.expense_date }}</td>
+        <td class="td-title">{{ e.title }}</td>
+        <td>
+          <span class="cat-badge">
+            {{ cat_icons.get(e.category, '💳') }} {{ e.category }}
+          </span>
+        </td>
+        <td class="td-note">{{ e.note or '—' }}</td>
+        <td class="text-right td-amount">$<strong>{{ "%.2f"|format(e.amount) }}</strong></td>
+        <td class="text-center">
+          <div class="action-btns">
+            <a href="{{ url_for('edit_expense', expense_id=e.id) }}" class="btn-edit">Edit</a>
+            <form method="POST" action="{{ url_for('delete_expense', expense_id=e.id) }}"
+                  onsubmit="return confirm('Delete this expense?')">
+              <button type="submit" class="btn-delete">Delete</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="empty-card">
+  <div class="empty-icon">💸</div>
+  <p>No expenses recorded yet.</p>
+  <a href="{{ url_for('add_expense') }}" class="btn-primary">Add your first expense</a>
+</div>
+{% endif %}
+{% endblock %}

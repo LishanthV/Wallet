@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Finance App{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h2>Hello, {{ session.user_name }}!</h2>
+    <p class="page-sub">{{ month_name }} overview</p>
+  </div>
+  <a href="{{ url_for('add_expense') }}" class="btn-primary">+ Add Expense</a>
+</div>
+
+<!-- Metric cards -->
+<div class="metrics-grid">
+  <div class="metric-card">
+    <span class="metric-label">Total spent</span>
+    <span class="metric-value">${{ "%.2f"|format(total) }}</span>
+    <span class="metric-sub">this month</span>
+  </div>
+  <div class="metric-card">
+    <span class="metric-label">Daily average</span>
+    <span class="metric-value">${{ "%.2f"|format(avg_daily) }}</span>
+    <span class="metric-sub">per day</span>
+  </div>
+  <div class="metric-card">
+    <span class="metric-label">Peak day</span>
+    <span class="metric-value">${{ "%.2f"|format(peak_total) }}</span>
+    <span class="metric-sub">{{ peak_day }}</span>
+  </div>
+  <div class="metric-card">
+    <span class="metric-label">Top category</span>
+    <span class="metric-value">{{ cat_labels[0] if cat_labels else '—' }}</span>
+    <span class="metric-sub">${{ "%.2f"|format(cat_data[0]) if cat_data else '0.00' }}</span>
+  </div>
+</div>
+
+<!-- Daily expenses chart -->
+<div class="chart-card">
+  <div class="chart-card-header">
+    <div>
+      <h3>Daily expenses</h3>
+      <p>{{ month_name }}</p>
+    </div>
+    <div class="tab-row">
+      <button class="tab active" onclick="loadRange(7, this)">7 days</button>
+      <button class="tab" onclick="loadRange(14, this)">14 days</button>
+      <button class="tab" onclick="loadRange(30, this)">Month</button>
+    </div>
+  </div>
+  <div class="chart-wrap" style="height:220px">
+    <canvas id="dailyChart"
+      role="img"
+      aria-label="Bar chart of daily expenses for {{ month_name }}">
+      Daily expenses for {{ month_name }}.
+    </canvas>
+  </div>
+</div>
+
+<!-- Category chart -->
+<div class="chart-card">
+  <div class="chart-card-header">
+    <div>
+      <h3>Spending by category</h3>
+      <p>Where your money goes</p>
+    </div>
+  </div>
+  {% if cat_labels %}
+  <div class="cat-legend">
+    {% set colors = ['#7F77DD','#AFA9EC','#CECBF6','#534AB7','#888780','#D3D1C7','#3C3489','#B4B2A9'] %}
+    {% for label in cat_labels %}
+    <span class="legend-item">
+      <span class="legend-dot" style="background:{{ colors[loop.index0 % colors|length] }}"></span>
+      {{ label }} ${{ "%.0f"|format(cat_data[loop.index0]) }}
+    </span>
+    {% endfor %}
+  </div>
+  {% endif %}
+  <div class="chart-wrap" style="height:{{ [cat_labels|length * 44 + 80, 180]|max }}px">
+    <canvas id="catChart"
+      role="img"
+      aria-label="Horizontal bar chart of spending by category this month">
+      {% for label in cat_labels %}{{ label }}: ${{ cat_data[loop.index0] }}. {% endfor %}
+    </canvas>
+  </div>
+</div>
+
+<!-- Recent transactions -->
+<div class="chart-card">
+  <div class="chart-card-header">
+    <h3>Recent transactions</h3>
+    <a href="{{ url_for('expenses') }}" class="link-muted">View all</a>
+  </div>
+  {% if recent %}
+  <ul class="tx-list">
+    {% for tx in recent %}
+    <li class="tx-item">
+      <div class="tx-icon">{{ cat_icons.get(tx.category, '💳') }}</div>
+      <div class="tx-info">
+        <span class="tx-name">{{ tx.title }}</span>
+        <span class="tx-meta">{{ tx.category }} · {{ tx.expense_date }}</span>
+      </div>
+      <span class="tx-amount tx-neg">-${{ "%.2f"|format(tx.amount) }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="empty-state">No expenses yet. <a href="{{ url_for('add_expense') }}">Add one!</a></p>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const dailyLabels = {{ daily_labels | tojson }};
+const dailyData   = {{ daily_data   | tojson }};
+const catLabels   = {{ cat_labels   | tojson }};
+const catData     = {{ cat_data     | tojson }};
+const CAT_COLORS  = ['#7F77DD','#AFA9EC','#CECBF6','#534AB7','#888780','#D3D1C7','#3C3489','#B4B2A9'];
+
+const isDark    = matchMedia('(prefers-color-scheme: dark)').matches;
+const textColor = isDark ? '#9493a0' : '#888780';
+const gridColor = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
+
+// ── Daily chart ──
+function buildDailyChart(labels, data) {
+  const maxIdx = data.indexOf(Math.max(...data));
+  return new Chart(document.getElementById('dailyChart'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Expenses ($)',
+        data,
+        backgroundColor: data.map((_, i) => i === maxIdx ? '#534AB7' : '#AFA9EC'),
+        borderRadius: 5,
+        borderSkipped: false
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: c => '$' + Math.round(c.raw).toLocaleString() }}
+      },
+      scales: {
+        x: { ticks: { color: textColor, font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 10 },
+             grid: { display: false }, border: { display: false }},
+        y: { ticks: { color: textColor, font: { size: 10 }, callback: v => '$' + v },
+             grid: { color: gridColor }, border: { display: false }}
+      }
+    }
+  });
+}
+
+let dailyChart = buildDailyChart(dailyLabels, dailyData);
+
+function loadRange(days, el) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  fetch(`/api/daily?days=${days}`)
+    .then(r => r.json())
+    .then(d => { dailyChart.destroy(); dailyChart = buildDailyChart(d.labels, d.data); });
+}
+
+// ── Category chart ──
+if (catLabels.length) {
+  new Chart(document.getElementById('catChart'), {
+    type: 'bar',
+    data: {
+      labels: catLabels,
+      datasets: [{
+        label: 'Amount ($)',
+        data: catData,
+        backgroundColor: catLabels.map((_, i) => CAT_COLORS[i % CAT_COLORS.length]),
+        borderRadius: 5,
+        borderSkipped: false
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: c => '$' + Math.round(c.raw).toLocaleString() }}
+      },
+      scales: {
+        x: { ticks: { color: textColor, font: { size: 10 }, callback: v => '$' + v },
+             grid: { color: gridColor }, border: { display: false }},
+        y: { ticks: { color: textColor, font: { size: 12 }},
+             grid: { display: false }, border: { display: false }}
+      }
+    }
+  });
+}
+</script>
+{% endblock %}

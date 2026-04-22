@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}All Expenses — FinanceApp{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h2>All Expenses</h2>
+    <p class="page-sub">{{ expenses|length }} record{{ 's' if expenses|length != 1 else '' }} found</p>
+  </div>
+  <a href="{{ url_for('add_expense') }}" class="btn-primary">+ Add Expense</a>
+</div>
+
+<!-- ── Filter / Search Bar ──────────────────── -->
+<form method="GET" action="{{ url_for('expenses') }}" class="filter-bar">
+  <input
+    type="text" name="q" value="{{ search }}"
+    placeholder="&#128269; Search by title…"
+    id="expense-search"/>
+  <select name="cat" id="cat-filter">
+    <option value="">All Categories</option>
+    {% for cat in categories %}
+    <option value="{{ cat }}" {% if selected_cat == cat %}selected{% endif %}>
+      {{ cat_icons[cat] }} {{ cat }}
+    </option>
+    {% endfor %}
+  </select>
+  <select name="sort" id="sort-filter">
+    <option value="date_desc"   {% if sort == 'date_desc'   %}selected{% endif %}>Date ↓ (newest)</option>
+    <option value="date_asc"    {% if sort == 'date_asc'    %}selected{% endif %}>Date ↑ (oldest)</option>
+    <option value="amount_desc" {% if sort == 'amount_desc' %}selected{% endif %}>Amount ↓ (highest)</option>
+    <option value="amount_asc"  {% if sort == 'amount_asc'  %}selected{% endif %}>Amount ↑ (lowest)</option>
+  </select>
+  <button type="submit" class="btn-primary btn-sm">Filter</button>
+  {% if search or selected_cat %}
+  <a href="{{ url_for('expenses') }}" class="btn-secondary btn-sm">Clear</a>
+  {% endif %}
+</form>
+
+{% if expenses %}
+<div class="table-card">
+  <table class="expense-table">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Title</th>
+        <th>Category</th>
+        <th>Note</th>
+        <th class="text-right">Amount</th>
+        <th class="text-center">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for e in expenses %}
+      <tr>
+        <td class="td-date">{{ e.expense_date }}</td>
+        <td class="td-title">{{ e.title }}</td>
+        <td>
+          <span class="cat-badge">
+            <span>{{ cat_icons.get(e.category, '💳') }}</span>
+            {{ e.category }}
+          </span>
+        </td>
+        <td class="td-note">{{ e.note or '—' }}</td>
+        <td class="text-right td-amount">${{ "%.2f"|format(e.amount) }}</td>
+        <td class="text-center">
+          <div class="action-btns">
+            <a href="{{ url_for('edit_expense', expense_id=e.id) }}" class="btn-edit">Edit</a>
+            <form method="POST" action="{{ url_for('delete_expense', expense_id=e.id) }}"
+                  onsubmit="return confirm('Delete this expense?')" style="margin:0;">
+              <button type="submit" class="btn-delete">Delete</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="empty-card">
+  <span class="empty-icon">💸</span>
+  <p>
+    {% if search or selected_cat %}
+      No expenses match your filters.
+    {% else %}
+      No expenses recorded yet.
+    {% endif %}
+  </p>
+  {% if search or selected_cat %}
+  <a href="{{ url_for('expenses') }}" class="btn-secondary">Clear filters</a>
+  {% else %}
+  <a href="{{ url_for('add_expense') }}" class="btn-primary">Add your first expense</a>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}
