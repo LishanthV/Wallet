@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}Sync UPI Transactions — FinanceApp{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h2>📲 GPay / UPI Sync</h2>
+    <p class="page-sub">Auto-import your UPI transactions from Gmail</p>
+  </div>
+</div>
+
+<div class="upi-sync-page">
+
+  <!-- How it works -->
+  <div class="sync-info-card">
+    <div class="sync-info-icon">💡</div>
+    <div class="sync-info-text">
+      <h3>How it works</h3>
+      <p>
+        Every time you pay via <strong>Google Pay, PhonePe, Paytm, or your bank's UPI</strong>,
+        a transaction alert email is sent to your Gmail. We scan those emails, extract the
+        amount &amp; merchant, then let you <strong>review &amp; confirm</strong> before
+        adding to your expenses. <em>Nothing is saved without your approval.</em>
+      </p>
+    </div>
+  </div>
+
+  <!-- Sync form -->
+  <div class="sync-form-card">
+    <h3>Fetch Transactions</h3>
+    <form method="POST" action="{{ url_for('upi_sync_fetch') }}">
+      <div class="sync-form-row">
+        <label for="days">Look back</label>
+        <select name="days" id="days">
+          <option value="7">Last 7 days</option>
+          <option value="15">Last 15 days</option>
+          <option value="30" selected>Last 30 days</option>
+          <option value="60">Last 60 days</option>
+          <option value="90">Last 90 days</option>
+        </select>
+        <button type="submit" class="btn-sync">
+          <span class="sync-icon">🔄</span> Scan Gmail
+        </button>
+      </div>
+    </form>
+    <p class="sync-note">
+      Already-imported transactions (matched by UPI reference ID) are automatically skipped.
+    </p>
+  </div>
+
+  <!-- Supported sources -->
+  <div class="sync-sources">
+    <h4>Supported Sources</h4>
+    <div class="sources-grid">
+      <div class="source-chip">🟢 Google Pay</div>
+      <div class="source-chip">🟣 PhonePe</div>
+      <div class="source-chip">🔵 Paytm</div>
+      <div class="source-chip">🔴 HDFC Bank</div>
+      <div class="source-chip">🟠 ICICI Bank</div>
+      <div class="source-chip">🟡 SBI</div>
+      <div class="source-chip">🔵 Axis Bank</div>
+      <div class="source-chip">🟤 Kotak Bank</div>
+    </div>
+  </div>
+
+</div>
+
+<style>
+.upi-sync-page { max-width: 720px; margin: 0 auto; padding: 20px 0; }
+
+.sync-info-card {
+  display: flex; gap: 16px; align-items: flex-start;
+  background: #eef6ff; border: 1px solid #bfdbfe;
+  border-radius: 12px; padding: 20px; margin-bottom: 24px;
+}
+.sync-info-icon { font-size: 2rem; flex-shrink: 0; }
+.sync-info-text h3 { margin: 0 0 6px; font-size: 1rem; color: #1e40af; }
+.sync-info-text p  { margin: 0; font-size: 0.9rem; color: #374151; line-height: 1.6; }
+
+.sync-form-card {
+  background: #fff; border: 1px solid #e5e7eb;
+  border-radius: 12px; padding: 24px; margin-bottom: 24px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.06);
+}
+.sync-form-card h3 { margin: 0 0 16px; font-size: 1rem; color: #111827; }
+
+.sync-form-row {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+}
+.sync-form-row label { font-size: .9rem; color: #374151; font-weight: 500; }
+.sync-form-row select {
+  padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 8px;
+  font-size: .9rem; background: #f9fafb; color: #111827;
+}
+
+.btn-sync {
+  display: flex; align-items: center; gap: 8px;
+  background: #2563eb; color: #fff;
+  border: none; border-radius: 8px;
+  padding: 9px 20px; font-size: .9rem; font-weight: 600;
+  cursor: pointer; transition: background .2s;
+}
+.btn-sync:hover { background: #1d4ed8; }
+.sync-icon { animation: spin 2s linear infinite paused; }
+.btn-sync:active .sync-icon { animation-play-state: running; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.sync-note { margin: 12px 0 0; font-size: .8rem; color: #6b7280; }
+
+.sync-sources { background: #f9fafb; border-radius: 12px; padding: 20px; }
+.sync-sources h4 { margin: 0 0 12px; font-size: .9rem; color: #374151; }
+.sources-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+.source-chip {
+  background: #fff; border: 1px solid #e5e7eb;
+  border-radius: 20px; padding: 5px 14px;
+  font-size: .82rem; color: #374151;
+}
+</style>
+{% endblock %}

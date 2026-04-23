@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+{% block title %}Review UPI Transactions — FinanceApp{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h2>Review UPI Transactions</h2>
+    <p class="page-sub">
+      Found <strong>{{ transactions|length }}</strong> new transaction(s) in the last {{ days }} days.
+      Edit details, uncheck any you don't want, then confirm.
+    </p>
+  </div>
+  <a href="{{ url_for('upi_sync_page') }}" class="btn-back">← Back</a>
+</div>
+
+{% if transactions %}
+<form method="POST" action="{{ url_for('upi_sync_confirm') }}">
+
+  <!-- Toolbar -->
+  <div class="review-toolbar">
+    <label class="select-all-label">
+      <input type="checkbox" id="selectAll" checked> Select All
+    </label>
+    <span class="review-total-label">
+      Total Selected: <strong id="totalDisplay">₹0</strong>
+    </span>
+    <button type="submit" class="btn-save-txns">
+      ✅ Save Selected
+    </button>
+  </div>
+
+  <!-- Transaction table -->
+  <div class="review-table-wrap">
+    <table class="review-table">
+      <thead>
+        <tr>
+          <th class="col-check"></th>
+          <th>Merchant / Title</th>
+          <th>Category</th>
+          <th>Amount (₹)</th>
+          <th>Date</th>
+          <th>Source</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for i, txn in transactions | enumerate %}
+        <tr class="txn-row" data-idx="{{ i }}">
+          <td class="col-check">
+            <input type="checkbox" name="selected" value="{{ i }}"
+                   class="txn-check" checked>
+          </td>
+          <td>
+            <input type="text" name="title_{{ i }}" value="{{ txn.title }}"
+                   class="field-title" placeholder="Merchant name">
+          </td>
+          <td>
+            <select name="category_{{ i }}" class="field-cat">
+              {% set cats = ["Food","Transport","Shopping","Entertainment",
+                             "Healthcare","Education","Utilities","Rent","Others"] %}
+              {% for cat in cats %}
+              <option value="{{ cat }}" {% if cat == txn.category %}selected{% endif %}>
+                {{ cat }}
+              </option>
+              {% endfor %}
+            </select>
+          </td>
+          <td>
+            <input type="number" name="amount_{{ i }}" value="{{ txn.amount }}"
+                   step="0.01" min="0" class="field-amount txn-amount">
+          </td>
+          <td>
+            <input type="date" name="date_{{ i }}" value="{{ txn.date }}"
+                   class="field-date">
+          </td>
+          <td class="col-source" title="{{ txn.source_email }}">
+            {{ txn.source_email | truncate(35) }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="review-footer">
+    <button type="submit" class="btn-save-txns">✅ Save Selected Transactions</button>
+    <a href="{{ url_for('upi_sync_page') }}" class="btn-cancel">Cancel</a>
+  </div>
+
+</form>
+
+{% else %}
+<div class="no-txns">
+  <p>🎉 No new UPI transactions to import. All up to date!</p>
+  <a href="{{ url_for('upi_sync_page') }}" class="btn-sync-again">← Try Again</a>
+</div>
+{% endif %}
+
+<style>
+/* ── Toolbar ── */
+.review-toolbar {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  background: #f9fafb; border: 1px solid #e5e7eb;
+  border-radius: 10px; padding: 12px 16px; margin-bottom: 16px;
+}
+.select-all-label { display: flex; align-items: center; gap: 6px; font-size: .9rem; cursor: pointer; }
+.review-total-label { margin-left: auto; font-size: .9rem; color: #374151; }
+.btn-save-txns {
+  background: #16a34a; color: #fff;
+  border: none; border-radius: 8px;
+  padding: 9px 20px; font-size: .9rem; font-weight: 600; cursor: pointer;
+  transition: background .2s;
+}
+.btn-save-txns:hover { background: #15803d; }
+
+/* ── Table ── */
+.review-table-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid #e5e7eb; }
+.review-table {
+  width: 100%; border-collapse: collapse; font-size: .88rem;
+}
+.review-table thead th {
+  background: #f3f4f6; text-align: left;
+  padding: 10px 12px; font-weight: 600; color: #374151;
+  border-bottom: 1px solid #e5e7eb;
+}
+.review-table tbody tr { border-bottom: 1px solid #f3f4f6; transition: background .15s; }
+.review-table tbody tr:hover { background: #f9fafb; }
+.review-table td { padding: 8px 10px; vertical-align: middle; }
+
+.col-check { width: 36px; text-align: center; }
+.col-source { font-size: .78rem; color: #6b7280; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Fields */
+.field-title {
+  width: 100%; border: 1px solid #e5e7eb; border-radius: 6px;
+  padding: 5px 8px; font-size: .85rem; min-width: 140px;
+}
+.field-cat, .field-date {
+  border: 1px solid #e5e7eb; border-radius: 6px;
+  padding: 5px 8px; font-size: .85rem; background: #f9fafb;
+}
+.field-amount {
+  width: 80px; border: 1px solid #e5e7eb; border-radius: 6px;
+  padding: 5px 8px; font-size: .85rem; text-align: right;
+}
+
+/* Unchecked row dims */
+.txn-row.unchecked { opacity: .45; }
+
+/* Footer */
+.review-footer { display: flex; align-items: center; gap: 12px; margin-top: 20px; }
+.btn-cancel {
+  padding: 9px 18px; border: 1px solid #e5e7eb; border-radius: 8px;
+  font-size: .9rem; color: #374151; text-decoration: none;
+  background: #fff;
+}
+.btn-back {
+  font-size: .85rem; color: #2563eb; text-decoration: none;
+}
+
+.no-txns { text-align: center; padding: 60px 20px; color: #6b7280; }
+.btn-sync-again {
+  display: inline-block; margin-top: 12px;
+  background: #2563eb; color: #fff; border-radius: 8px;
+  padding: 9px 18px; text-decoration: none; font-size: .9rem;
+}
+</style>
+
+<script>
+// Select All toggle
+document.getElementById('selectAll').addEventListener('change', function() {
+  document.querySelectorAll('.txn-check').forEach(cb => {
+    cb.checked = this.checked;
+    cb.closest('.txn-row').classList.toggle('unchecked', !this.checked);
+  });
+  updateTotal();
+});
+
+// Per-row checkbox
+document.querySelectorAll('.txn-check').forEach(cb => {
+  cb.addEventListener('change', function() {
+    this.closest('.txn-row').classList.toggle('unchecked', !this.checked);
+    updateTotal();
+  });
+});
+
+// Live total
+function updateTotal() {
+  let total = 0;
+  document.querySelectorAll('.txn-check:checked').forEach(cb => {
+    const row = cb.closest('.txn-row');
+    const amt = parseFloat(row.querySelector('.txn-amount').value) || 0;
+    total += amt;
+  });
+  document.getElementById('totalDisplay').textContent = '₹' + total.toFixed(2);
+}
+
+// Amount change recalculates total
+document.querySelectorAll('.txn-amount').forEach(inp => {
+  inp.addEventListener('input', updateTotal);
+});
+
+// Init
+updateTotal();
+</script>
+{% endblock %}

@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Review Bill Items — Trackify{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h2>Review Bill Items</h2>
+    <p class="page-sub">Detected {{ items|length }} items from your bill. Review and edit before saving.</p>
+  </div>
+  <a href="{{ url_for('add_expense') }}" class="btn-secondary">&#8592; Back</a>
+</div>
+
+<div class="card" style="padding: 0; overflow: hidden;">
+  <form method="POST" action="{{ url_for('confirm_bill_items') }}" id="review-form">
+    <input type="hidden" name="expense_date" value="{{ expense_date }}">
+    {% if deduct_wallet %}
+    <input type="hidden" name="deduct_wallet" value="1">
+    {% endif %}
+
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th class="text-center" style="width: 80px;">
+              <input type="checkbox" id="select-all" checked onchange="toggleAll(this)" style="width: 18px; height: 18px; cursor: pointer;">
+            </th>
+            <th>Product Title</th>
+            <th style="width: 220px;">Category</th>
+            <th class="text-right" style="width: 180px;">Amount ({{ currency_symbol }})</th>
+          </tr>
+        </thead>
+        <tbody id="items-body">
+          {% for item in items %}
+          <tr class="item-row">
+            <td class="text-center">
+              <input type="checkbox" name="include_item" value="{{ loop.index0 }}" checked 
+                     onchange="updateTotal()" style="width: 18px; height: 18px; cursor: pointer;">
+            </td>
+            <td>
+              <input type="text" name="item_title" value="{{ item.title }}" maxlength="150" required 
+                     style="border: none; background: transparent; width: 100%; font-weight: 500;">
+            </td>
+            <td>
+              <select name="item_category" required style="border: 1px solid var(--border); background: var(--bg-app); border-radius: 8px; padding: 6px 12px;">
+                {% for c in categories %}
+                <option value="{{ c }}" {% if c == item.category %}selected{% endif %}>
+                   {{ c }}
+                </option>
+                {% endfor %}
+              </select>
+            </td>
+            <td class="text-right">
+              <input type="number" name="item_amount" value="{{ '%.2f'|format(item.amount) }}" step="0.01" min="0.01" required 
+                     oninput="updateTotal()" style="text-align: right; border: 1px solid var(--border); background: var(--bg-app); border-radius: 8px; padding: 6px 12px; width: 120px; font-weight: 700;">
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr style="background: var(--primary-light); font-weight: 800;">
+                <td colspan="3" class="text-right" style="padding: 20px;">Selected Total:</td>
+                <td class="text-right" style="padding: 20px; font-size: 18px; color: var(--primary);">
+                    {{ currency_symbol }}<span id="grand-total">0.00</span>
+                </td>
+            </tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <div style="display: flex; justify-content: space-between; align-items: center; padding: 32px 24px; background: #fff; border-top: 1px solid var(--border);">
+      <div style="color: var(--text-muted); font-size: 14px;">
+          Date: <strong>{{ expense_date }}</strong> &middot; 
+          Wallet Deduction: <strong>{{ 'On' if deduct_wallet else 'Off' }}</strong>
+      </div>
+      <div style="display: flex; gap: 12px;">
+        <a href="{{ url_for('add_expense') }}" class="btn-secondary">Cancel</a>
+        <button type="submit" class="btn-primary" style="padding: 12px 32px;">Confirm & Save Expenses</button>
+      </div>
+    </div>
+  </form>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleAll(master) {
+    const checkboxes = document.getElementsByName('include_item');
+    for (let cb of checkboxes) {
+        cb.checked = master.checked;
+    }
+    updateTotal();
+}
+
+function updateTotal() {
+    const rows = document.querySelectorAll('.item-row');
+    let total = 0;
+    rows.forEach(row => {
+        const checkbox = row.querySelector('input[name="include_item"]');
+        const amountInput = row.querySelector('input[name="item_amount"]');
+        if (checkbox.checked) {
+            total += parseFloat(amountInput.value) || 0;
+        }
+    });
+    document.getElementById('grand-total').innerText = total.toFixed(2);
+}
+
+// Initial total calculation
+document.addEventListener('DOMContentLoaded', updateTotal);
+</script>
+{% endblock %}

@@ -1,321 +1,153 @@
 {% extends "base.html" %}
-{% block title %}Dashboard — FinanceApp{% endblock %}
+{% block title %}Dashboard — Trackify{% endblock %}
 
 {% block content %}
-<!-- ── Page Header ────────────────────────── -->
 <div class="page-header">
   <div>
-    <h2>Hello, {{ session.user_name }}! 👋</h2>
-    <p class="page-sub">{{ month_name }} spending overview</p>
+    <p class="page-kicker">{{ now.strftime('%B %Y') if now else 'Monthly' }} Spending Overview</p>
+    <h2>Welcome back, {{ session.user_name }}</h2>
   </div>
-  <a href="{{ url_for('add_expense') }}" class="btn-primary">+ Add Expense</a>
+  <div class="header-actions">
+    <button class="btn-secondary" onclick="simulateGPay()">Simulate GPay</button>
+    <a href="{{ url_for('add_expense') }}" class="btn-primary">+ Add Expense</a>
+  </div>
 </div>
 
-<!-- ── Wallet Balance Banner ─────────────── -->
-<div class="wallet-banner {% if wallet_balance < 0 %}wallet-danger{% endif %}">
-  <div class="wallet-banner-left">
-    <div class="wallet-banner-icon">💰</div>
-    <div>
-      <span class="wallet-banner-label">Wallet Balance</span>
-      <span class="wallet-banner-amount">
-        ${{ "%.2f"|format(wallet_balance) }}
-      </span>
-      {% if wallet_balance < 0 %}
-      <span class="wallet-banner-warning">⚠️ Insufficient balance</span>
+<!-- Main Metrics -->
+<div class="stats-grid">
+  <div class="stat-card stat-primary">
+    <div class="stat-icon"><i class="fa-solid fa-wallet"></i></div>
+    <div class="stat-info">
+      <p class="stat-label">Available Balance</p>
+      <h3 class="stat-value">{{ currency_symbol }}{{ "{:,.2f}".format(wallet_balance) }}</h3>
+    </div>
+    <a href="{{ url_for('add_money') }}" class="stat-action">Add Money</a>
+  </div>
+
+  <div class="stat-card">
+    <div class="stat-icon icon-success"><i class="fa-solid fa-arrow-trend-up"></i></div>
+    <div class="stat-info">
+      <p class="stat-label">Income This Month</p>
+      <h3 class="stat-value">{{ currency_symbol }}{{ "{:,.2f}".format(total_income) }}</h3>
+    </div>
+  </div>
+
+  <div class="stat-card">
+    <div class="stat-icon icon-danger"><i class="fa-solid fa-arrow-trend-down"></i></div>
+    <div class="stat-info">
+      <p class="stat-label">Expenses This Month</p>
+      <h3 class="stat-value">{{ currency_symbol }}{{ "{:,.2f}".format(total_expenses) }}</h3>
+    </div>
+  </div>
+</div>
+
+<div class="dashboard-main">
+  <!-- Chart Section -->
+  <div class="card chart-container">
+    <div class="card-header">
+      <h3>Spending Analytics</h3>
+      <div class="chart-legend" id="chartLegend"></div>
+    </div>
+    <canvas id="spendChart" height="200"></canvas>
+  </div>
+
+  <!-- Recent Transactions -->
+  <div class="card">
+    <div class="card-header">
+      <h3>Recent Transactions</h3>
+      <a href="{{ url_for('expenses') }}" class="btn-text">View All</a>
+    </div>
+    <div class="transaction-list">
+      {% if recent %}
+        {% for tx in recent %}
+        <div class="transaction-item">
+          <div class="transaction-icon">{{ cat_icons.get(tx.category, '💳') }}</div>
+          <div class="transaction-info">
+            <p class="transaction-title">{{ tx.title }}</p>
+            <p class="transaction-meta">{{ tx.category }} • {{ tx.txdate }}</p>
+          </div>
+          <div class="transaction-amount {{ 'text-success' if tx.type == 'income' else 'text-danger' }}">
+            {{ '+' if tx.type == 'income' else '-' }}{{ currency_symbol }}{{ "{:,.2f}".format(tx.amount) }}
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="empty-state">
+          <i class="fa-solid fa-receipt"></i>
+          <p>No transactions yet. Start by adding an expense!</p>
+        </div>
       {% endif %}
     </div>
   </div>
-  <a href="{{ url_for('add_money') }}" class="btn-add-money">+ Add Money</a>
 </div>
 
-<!-- ── Metric Cards ───────────────────────── -->
-<div class="metrics-grid">
-  <div class="metric-card">
-    <div class="metric-icon">💸</div>
-    <span class="metric-label">Total Spent</span>
-    <span class="metric-value">${{ "%.2f"|format(total) }}</span>
-    <span class="metric-sub">this month</span>
-  </div>
-  <div class="metric-card">
-    <div class="metric-icon">📅</div>
-    <span class="metric-label">Daily Average</span>
-    <span class="metric-value">${{ "%.2f"|format(avg_daily) }}</span>
-    <span class="metric-sub">per active day</span>
-  </div>
-  <div class="metric-card">
-    <div class="metric-icon">🔥</div>
-    <span class="metric-label">Peak Day</span>
-    <span class="metric-value">${{ "%.2f"|format(peak_total) }}</span>
-    <span class="metric-sub">{{ peak_day }}</span>
-  </div>
-  <div class="metric-card">
-    <div class="metric-icon">🧾</div>
-    <span class="metric-label">Transactions</span>
-    <span class="metric-value">{{ tx_count }}</span>
-    <span class="metric-sub">this month</span>
-  </div>
-</div>
-
-<!-- ── Daily Expenses Bar Chart ──────────── -->
-<div class="chart-card">
-  <div class="chart-card-header">
-    <div>
-      <h3>Daily Expenses</h3>
-      <p>{{ month_name }} · {{ days_in_month }}-day view</p>
-    </div>
-    <div class="tab-row">
-      <button class="tab" onclick="loadRange(7, this)">7 Days</button>
-      <button class="tab" onclick="loadRange(14, this)">14 Days</button>
-      <button class="tab active" onclick="loadRange({{ days_in_month }}, this)">Full Month</button>
-    </div>
-  </div>
-  <!-- Chart fills the full month, highlighted peak bar -->
-  <div class="chart-wrap" style="height: 240px;">
-    <canvas id="dailyChart" aria-label="Bar chart of daily expenses for {{ month_name }}"></canvas>
-  </div>
-  {% if total == 0 %}
-  <p class="empty-state" style="padding: 12px 0 0;">No expenses recorded yet for {{ month_name }}.</p>
-  {% endif %}
-</div>
-
-<!-- ── Category Bar Chart ─────────────────── -->
-<div class="chart-card">
-  <div class="chart-card-header">
-    <div>
-      <h3>Spending by Category</h3>
-      <p>Where your money goes this month</p>
-    </div>
-  </div>
-
-  {% if cat_labels %}
-  <!-- Legend -->
-  <div class="cat-legend">
-    {% for label in cat_labels %}
-    <span class="legend-item">
-      <span class="legend-dot"
-            style="background: {{ cat_colors_js[loop.index0] }};
-                   box-shadow: 0 0 8px {{ cat_colors_js[loop.index0] }}80;">
-      </span>
-      {{ label }}
-      <strong style="color: #fff;">${{ "%.0f"|format(cat_data[loop.index0]) }}</strong>
-    </span>
-    {% endfor %}
-  </div>
-  <div class="chart-wrap" style="height: {{ [cat_labels|length * 48 + 60, 200]|max }}px;">
-    <canvas id="catChart" aria-label="Horizontal bar chart of spending by category"></canvas>
-  </div>
-  {% else %}
-  <div class="empty-state" style="padding: 32px 0;">
-    <span style="font-size: 32px;">📊</span>
-    <p style="margin-top: 12px;">No category data yet.</p>
-  </div>
-  {% endif %}
-</div>
-
-<!-- ── Recent Transactions ────────────────── -->
-<div class="chart-card">
-  <div class="chart-card-header">
-    <div>
-      <h3>Recent Transactions</h3>
-      <p>Your last 5 expenses</p>
-    </div>
-    <a href="{{ url_for('expenses') }}" class="btn-secondary btn-sm">View All →</a>
-  </div>
-
-  {% if recent %}
-  <ul class="tx-list">
-    {% for tx in recent %}
-    <li class="tx-item">
-      <div class="tx-icon">{{ cat_icons.get(tx.category, '💳') }}</div>
-      <div class="tx-info">
-        <span class="tx-name">{{ tx.title }}</span>
-        <span class="tx-meta">{{ tx.category }} &middot; {{ tx.expense_date }}
-          {% if tx.note %}&middot; <em>{{ tx.note[:40] }}{% if tx.note|length > 40 %}…{% endif %}</em>{% endif %}
-        </span>
-      </div>
-      <span class="tx-amount tx-neg">-${{ "%.2f"|format(tx.amount) }}</span>
-    </li>
-    {% endfor %}
-  </ul>
-  {% else %}
-  <div class="empty-state">
-    <span style="font-size: 36px; display:block; margin-bottom: 12px;">💸</span>
-    No expenses yet — <a href="{{ url_for('add_expense') }}">add your first one!</a>
-  </div>
-  {% endif %}
-</div>
-{% endblock %}
-
-{% block scripts %}
 <script>
-/* ── Chart.js config ── */
-const dailyLabels    = {{ daily_labels    | tojson }};
-const dailyDataRaw   = {{ daily_data      | tojson }};
-const catLabels      = {{ cat_labels      | tojson }};
-const catDataRaw     = {{ cat_data        | tojson }};
-const catColorsArr   = {{ cat_colors_js   | tojson }};
-const daysInMonth    = {{ days_in_month }};
-
-Chart.defaults.font.family = "'Outfit', sans-serif";
-
-const TEXT_COLOR = '#63627a';
-const GRID_COLOR = 'rgba(255,255,255,0.05)';
-const TIP_BG     = 'rgba(11,9,26,0.95)';
-
-/* ── Gradient helper ── */
-function makeGradient(ctx, colorTop, colorBot) {
-  const gr = ctx.createLinearGradient(0, 0, 0, 400);
-  gr.addColorStop(0, colorTop);
-  gr.addColorStop(1, colorBot);
-  return gr;
-}
-
-/* ─────────────────────────────────────
-   DAILY BAR CHART (full current month)
-───────────────────────────────────── */
-function buildDailyChart(labels, data) {
-  const canvas = document.getElementById('dailyChart');
-  const ctx    = canvas.getContext('2d');
-
-  const maxVal = Math.max(...data);
-  const maxIdx = data.indexOf(maxVal);
-
-  // Each bar: peak = pink glow, others = purple gradient
-  const bgColors = data.map((_, i) => {
-    if (maxVal === 0) return 'rgba(157,141,241,0.4)';
-    return i === maxIdx ? '#ff7eb3' : 'rgba(157,141,241,0.65)';
-  });
-  const borderColors = data.map((_, i) =>
-    i === maxIdx ? '#ff7eb3' : 'rgba(157,141,241,0.9)'
-  );
-
-  return new Chart(canvas, {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [{
-        label: 'Spent ($)',
-        data,
-        backgroundColor: bgColors,
-        borderColor: borderColors,
-        borderWidth: 1.5,
-        borderRadius: 6,
-        borderSkipped: false,
-        hoverBackgroundColor: data.map((_, i) =>
-          i === maxIdx ? '#ffb3d1' : 'rgba(157,141,241,0.9)'
-        ),
-      }]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      animation: { duration: 700, easing: 'easeOutQuart' },
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          backgroundColor: TIP_BG,
-          titleColor: '#fff', bodyColor: '#a1a0b8',
-          borderColor: 'rgba(157,141,241,0.3)', borderWidth: 1,
-          cornerRadius: 10, padding: 12,
-          callbacks: {
-            title: items => `Day ${items[0].label}`,
-            label: c => ` $${Number(c.raw).toFixed(2)}`
-          }
-        }
-      },
-      scales: {
-        x: {
-          ticks: {
-            color: TEXT_COLOR,
-            font: { size: 11 },
-            maxRotation: 0, autoSkip: true, maxTicksLimit: 16
-          },
-          grid: { display: false },
-          border: { display: false }
-        },
-        y: {
-          beginAtZero: true,
-          ticks: {
-            color: TEXT_COLOR,
-            font: { size: 11 },
-            callback: v => '$' + v
-          },
-          grid: { color: GRID_COLOR },
-          border: { display: false }
-        }
-      }
-    }
-  });
-}
-
-let dailyChart = buildDailyChart(dailyLabels, dailyDataRaw);
-
-/* Toggle day range */
-function loadRange(days, el) {
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  el.classList.add('active');
-  fetch(`/api/daily?days=${days}`)
+function simulateGPay() {
+    const amount = (Math.random() * 500 + 50).toFixed(2);
+    fetch('/api/sync/gpay', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: amount, title: 'Sample Merchant Payment' })
+    })
     .then(r => r.json())
-    .then(d => {
-      dailyChart.destroy();
-      dailyChart = buildDailyChart(d.labels, d.data);
+    .then(data => {
+        alert(data.message);
+        window.location.reload();
     });
 }
 
-/* ─────────────────────────────────────
-   CATEGORY HORIZONTAL BAR CHART
-───────────────────────────────────── */
-if (catLabels.length > 0) {
-  const catCtx = document.getElementById('catChart').getContext('2d');
+document.addEventListener('DOMContentLoaded', function() {
+    const ctx = document.getElementById('spendChart').getContext('2d');
+    
+    // Read data from hidden JSON elements to satisfy IDE linting
+    const labelsData = document.getElementById('chartLabelsData').textContent;
+    const valuesData = document.getElementById('chartValuesData').textContent;
+    
+    if (!labelsData || !valuesData) return;
+    
+    const categoryLabels = JSON.parse(labelsData);
+    const categoryValues = JSON.parse(valuesData);
+    
+    if (!categoryLabels || categoryLabels.length === 0) return;
 
-  new Chart(catCtx, {
-    type: 'bar',
-    data: {
-      labels: catLabels,
-      datasets: [{
-        label: 'Amount ($)',
-        data: catDataRaw,
-        backgroundColor: catColorsArr.map(c => c + 'bb'),  // slight transparency
-        borderColor: catColorsArr,
-        borderWidth: 2,
-        borderRadius: 6,
-        borderSkipped: false,
-        hoverBackgroundColor: catColorsArr,
-      }]
-    },
-    options: {
-      indexAxis: 'y',
-      responsive: true, maintainAspectRatio: false,
-      animation: { duration: 800, easing: 'easeOutQuart' },
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          backgroundColor: TIP_BG,
-          titleColor: '#fff', bodyColor: '#a1a0b8',
-          borderColor: 'rgba(157,141,241,0.3)', borderWidth: 1,
-          cornerRadius: 10, padding: 12,
-          callbacks: {
-            label: c => ` $${Number(c.raw).toFixed(2)}`
-          }
-        }
-      },
-      scales: {
-        x: {
-          beginAtZero: true,
-          ticks: {
-            color: TEXT_COLOR, font: { size: 11 },
-            callback: v => '$' + v
-          },
-          grid: { color: GRID_COLOR },
-          border: { display: false }
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: categoryLabels,
+            datasets: [{
+                label: 'Spending',
+                data: categoryValues,
+                backgroundColor: 'rgba(39, 174, 96, 0.8)',
+                borderColor: '#27ae60',
+                borderWidth: 1,
+                borderRadius: 8,
+                barThickness: 30
+            }]
         },
-        y: {
-          ticks: { color: '#e8e7f0', font: { size: 14, weight: '600' } },
-          grid: { display: false },
-          border: { display: false }
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { 
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: '#0a3d62',
+                    padding: 12,
+                    titleFont: { size: 14, weight: 'bold' }
+                }
+            },
+            scales: {
+                y: { 
+                    beginAtZero: true, 
+                    grid: { color: '#f1f1f1', drawBorder: false },
+                    ticks: { font: { weight: '600' } }
+                },
+                x: { 
+                    grid: { display: false },
+                    ticks: { font: { weight: '600' } }
+                }
+            }
         }
-      }
-    }
-  });
-}
+    });
+});
 </script>
 {% endblock %}

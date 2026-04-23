@@ -1,62 +1,85 @@
 {% extends "base.html" %}
-{% block title %}Add Money — Finance Tracker{% endblock %}
+{% block title %}Add Money — Trackify{% endblock %}
 
 {% block content %}
 <div class="page-header">
   <div>
-    <h2>💰 Add Money to Wallet</h2>
-    <p class="page-sub">Top up your wallet balance</p>
+    <p class="page-kicker">Wallet Management</p>
+    <h2>Top up your funds</h2>
   </div>
-  <a href="{{ url_for('dashboard') }}" class="btn-secondary">&#8592; Dashboard</a>
+  <a href="{{ url_for('dashboard') }}" class="btn-secondary"><i class="fa-solid fa-arrow-left"></i> Back to Dashboard</a>
 </div>
 
-<!-- Current Balance Card -->
-<div class="wallet-balance-card {% if wallet_balance < 0 %}wallet-balance-danger{% endif %}">
-  <div class="wallet-balance-icon">💳</div>
-  <div>
-    <span class="wallet-balance-label">Current Balance</span>
-    <span class="wallet-balance-amount">${{ "%.2f"|format(wallet_balance) }}</span>
-    {% if wallet_balance < 0 %}
-    <span class="wallet-balance-note">⚠️ Your balance is negative. Please top up.</span>
-    {% else %}
-    <span class="wallet-balance-note">Available to spend</span>
-    {% endif %}
+<div class="dashboard-main" style="grid-template-columns: 1fr 1fr;">
+  <!-- Left: Balance Card -->
+  <div class="stat-card stat-primary" style="height: fit-content;">
+    <div class="stat-icon"><i class="fa-solid fa-wallet"></i></div>
+    <div class="stat-info">
+      <p class="stat-label">Current Balance</p>
+      <h3 class="stat-value">{{ currency_symbol }}{{ "{:,.2f}".format(wallet_balance) }}</h3>
+      <p style="font-size: 13px; opacity: 0.8; margin-top: 8px;">
+        {% if wallet_balance < 0 %}
+          <i class="fa-solid fa-circle-exclamation"></i> Balance is negative. Please top up.
+        {% else %}
+          <i class="fa-solid fa-circle-check"></i> Available to spend
+        {% endif %}
+      </p>
+    </div>
+  </div>
+
+  <!-- Right: Form Card -->
+  <div class="card">
+    <div class="card-header">
+      <h3>Deposit Funds</h3>
+    </div>
+    
+    <form method="POST" action="{{ url_for('add_money') }}" class="modern-form">
+      <div class="form-group" style="margin-bottom: 24px;">
+        <label for="amount" style="display: block; font-weight: 600; margin-bottom: 8px; color: var(--text-muted);">Amount to Add ({{ currency_symbol }})</label>
+        <div style="position: relative;">
+          <span style="position: absolute; left: 16px; top: 50%; transform: translateY(-50%); font-weight: 700; color: var(--secondary);">{{ currency_symbol }}</span>
+          <input type="number" id="amount" name="amount" 
+                 placeholder="0.00" step="0.01" min="0.01" required autofocus
+                 style="width: 100%; padding: 16px 16px 16px 40px; border-radius: 12px; border: 2px solid var(--border); font-size: 18px; font-weight: 700; outline: none; transition: var(--transition);">
+        </div>
+      </div>
+
+      <!-- Quick presets -->
+      <div style="margin-bottom: 32px;">
+        <p style="font-size: 12px; font-weight: 700; color: var(--text-light); text-transform: uppercase; margin-bottom: 12px;">Quick Select</p>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button type="button" class="btn-secondary" onclick="setAmount(100)" style="padding: 8px 16px; font-size: 14px;">+ {{ currency_symbol }}100</button>
+          <button type="button" class="btn-secondary" onclick="setAmount(500)" style="padding: 8px 16px; font-size: 14px;">+ {{ currency_symbol }}500</button>
+          <button type="button" class="btn-secondary" onclick="setAmount(1000)" style="padding: 8px 16px; font-size: 14px;">+ {{ currency_symbol }}1k</button>
+          <button type="button" class="btn-secondary" onclick="setAmount(5000)" style="padding: 8px 16px; font-size: 14px;">+ {{ currency_symbol }}5k</button>
+        </div>
+      </div>
+
+      <div class="form-actions" style="display: flex; gap: 12px;">
+        <button type="submit" class="btn-primary" style="flex: 1; justify-content: center; padding: 16px;">
+          <i class="fa-solid fa-shield-check"></i> Complete Deposit
+        </button>
+      </div>
+    </form>
   </div>
 </div>
 
-<!-- Add Money Form -->
-<div class="form-card">
-  <form method="POST" action="{{ url_for('add_money') }}">
-    <div class="form-group">
-      <label for="amount">Amount to Add ($)</label>
-      <input type="number" id="amount" name="amount"
-             placeholder="e.g. 500.00"
-             step="0.01" min="0.01"
-             required autofocus/>
-    </div>
-
-    <!-- Quick presets -->
-    <div class="amount-presets">
-      <span class="preset-label">Quick add:</span>
-      <button type="button" class="preset-btn" onclick="setAmount(100)">$100</button>
-      <button type="button" class="preset-btn" onclick="setAmount(500)">$500</button>
-      <button type="button" class="preset-btn" onclick="setAmount(1000)">$1,000</button>
-      <button type="button" class="preset-btn" onclick="setAmount(5000)">$5,000</button>
-    </div>
-
-    <div class="form-actions">
-      <a href="{{ url_for('dashboard') }}" class="btn-secondary">Cancel</a>
-      <button type="submit" class="btn-primary">💰 Add to Wallet</button>
-    </div>
-  </form>
-</div>
-{% endblock %}
-
-{% block scripts %}
 <script>
 function setAmount(val) {
-  document.getElementById('amount').value = val.toFixed(2);
-  document.getElementById('amount').focus();
+  const input = document.getElementById('amount');
+  input.value = val.toFixed(2);
+  input.focus();
+  input.style.borderColor = 'var(--primary)';
 }
+
+document.getElementById('amount').addEventListener('focus', function() {
+    this.style.borderColor = 'var(--primary)';
+    this.style.boxShadow = '0 0 0 4px rgba(39, 174, 96, 0.1)';
+});
+
+document.getElementById('amount').addEventListener('blur', function() {
+    this.style.borderColor = 'var(--border)';
+    this.style.boxShadow = 'none';
+});
 </script>
 {% endblock %}

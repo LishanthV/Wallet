@@ -1,73 +1,159 @@
 {% extends "base.html" %}
-{% block title %}Recurring Expenses — Finance App{% endblock %}
+{% block title %}Recurring Expenses — Trackify{% endblock %}
+
 {% block content %}
 <div class="page-header">
-  <div><h2>Recurring Expenses</h2><p class="page-sub">Auto-applied every month on their due day</p></div>
-  <button onclick="document.getElementById('addRecModal').style.display='flex'" class="btn-primary">+ Add Recurring</button>
+  <div>
+    <p class="page-kicker">Subscriptions & Bills</p>
+    <h2>Recurring Expenses</h2>
+  </div>
+  <button onclick="showRecModal()" class="btn-primary"><i class="fa-solid fa-plus"></i> Add Recurring</button>
 </div>
 
 {% if recurring %}
-<div class="table-card">
-  <table class="expense-table">
-    <thead><tr><th>Day</th><th>Title</th><th>Category</th><th>Note</th><th class="text-right">Amount</th><th>Status</th><th class="text-center">Actions</th></tr></thead>
-    <tbody>
-    {% for r in recurring %}
-    <tr style="{% if not r.is_active %}opacity:0.5{% endif %}">
-      <td><span style="font-size:13px;font-weight:600;color:var(--purple-400)">{{ r.day_of_month }}</span><span style="font-size:10px;color:var(--text-3)">th</span></td>
-      <td class="td-title">{{ r.title }}</td>
-      <td><span class="cat-badge">{{ cat_icons.get(r.category,'💳') }} {{ r.category }}</span></td>
-      <td class="td-note">{{ r.note or '—' }}</td>
-      <td class="text-right td-amount">${{ "%.2f"|format(r.amount) }}</td>
-      <td>
-        <form method="POST" action="{{ url_for('toggle_recurring',rid=r.id) }}">
-          <button type="submit" class="{% if r.is_active %}btn-edit{% else %}btn-secondary{% endif %}" style="font-size:11px;padding:3px 10px">
-            {{ 'Active' if r.is_active else 'Paused' }}
-          </button>
-        </form>
-      </td>
-      <td class="text-center">
-        <form method="POST" action="{{ url_for('delete_recurring',rid=r.id) }}" onsubmit="return confirm('Delete?')">
-          <button type="submit" class="btn-delete">Delete</button>
-        </form>
-      </td>
-    </tr>
-    {% endfor %}
-    </tbody>
-  </table>
+<div class="card" style="padding: 0; overflow: hidden; margin-bottom: 24px;">
+  <div style="overflow-x: auto;">
+    <table class="expense-table" style="width: 100%; border-collapse: collapse;">
+      <thead>
+        <tr style="background: var(--bg-app); border-bottom: 1px solid var(--border); text-align: left;">
+          <th style="padding: 16px 24px; font-size: 12px; text-transform: uppercase; color: var(--text-muted); font-weight: 700; letter-spacing: 0.5px; width: 80px; text-align: center;">Day</th>
+          <th style="padding: 16px 24px; font-size: 12px; text-transform: uppercase; color: var(--text-muted); font-weight: 700; letter-spacing: 0.5px;">Title & Note</th>
+          <th style="padding: 16px 24px; font-size: 12px; text-transform: uppercase; color: var(--text-muted); font-weight: 700; letter-spacing: 0.5px;">Category</th>
+          <th style="padding: 16px 24px; font-size: 12px; text-transform: uppercase; color: var(--text-muted); font-weight: 700; letter-spacing: 0.5px; text-align: right;">Amount</th>
+          <th style="padding: 16px 24px; font-size: 12px; text-transform: uppercase; color: var(--text-muted); font-weight: 700; letter-spacing: 0.5px; text-align: center;">Status</th>
+          <th style="padding: 16px 24px; font-size: 12px; text-transform: uppercase; color: var(--text-muted); font-weight: 700; letter-spacing: 0.5px; text-align: center;">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in recurring %}
+        <tr class="{{ 'paused-row' if not r.is_active else '' }}" style="border-bottom: 1px solid var(--border); transition: background 0.2s;">
+          <td style="padding: 16px 24px; text-align: center;">
+            <div style="width: 44px; height: 44px; background: var(--primary-light); color: var(--primary); border-radius: 12px; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; font-weight: 800; margin: 0 auto;">
+                <span style="font-size: 16px; line-height: 1;">{{ r.day_of_month }}</span>
+                <span style="font-size: 9px; text-transform: uppercase;">th</span>
+            </div>
+          </td>
+          <td style="padding: 16px 24px;">
+            <div style="font-weight: 600; color: var(--text-main); margin-bottom: 4px;">{{ r.title }}</div>
+            {% if r.note %}
+            <div style="font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 4px;">
+              <i class="fa-regular fa-comment-dots"></i> {{ r.note }}
+            </div>
+            {% endif %}
+          </td>
+          <td style="padding: 16px 24px;">
+            <span style="background: var(--bg-app); color: var(--text-muted); border: 1px solid var(--border); padding: 6px 12px; border-radius: 8px; font-weight: 700; font-size: 12px;">
+              {{ r.category }}
+            </span>
+          </td>
+          <td style="padding: 16px 24px; text-align: right; font-weight: 700; color: var(--text-main);">
+            -{{ currency_symbol }}{{ "{:,.2f}".format(r.amount) }}
+          </td>
+          <td style="padding: 16px 24px; text-align: center;">
+            <form method="POST" action="{{ url_for('toggle_recurring', rid=r.id) }}" style="margin: 0;">
+              <button type="submit" class="{{ 'badge-active' if r.is_active else 'badge-paused' }}" style="cursor: pointer; border: none; font-family: inherit; font-weight: 700; padding: 6px 12px; border-radius: 20px; font-size: 12px;">
+                {{ 'Active' if r.is_active else 'Paused' }}
+              </button>
+            </form>
+          </td>
+          <td style="padding: 16px 24px; text-align: center;">
+            <form method="POST" action="{{ url_for('delete_recurring', rid=r.id) }}" onsubmit="return confirm('Delete this recurring expense?')" style="margin: 0;">
+              <button type="submit" style="width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; background: #fee2e2; color: var(--danger); border: none; cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='#fecaca'" onmouseout="this.style.background='#fee2e2'">
+                <i class="fa-solid fa-trash" style="font-size: 12px;"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
 {% else %}
-<div class="empty-card"><div class="empty-icon">🔄</div><p>No recurring expenses set up.</p><button onclick="document.getElementById('addRecModal').style.display='flex'" class="btn-primary">Add one</button></div>
+<div class="card" style="text-align: center; padding: 64px 24px;">
+  <div style="width: 80px; height: 80px; background: var(--bg-app); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px; color: var(--text-light); font-size: 32px;">
+    <i class="fa-solid fa-calendar-days"></i>
+  </div>
+  <h3 style="margin-bottom: 8px;">No recurring expenses</h3>
+  <p style="color: var(--text-muted); margin-bottom: 24px;">Set up monthly bills and subscriptions to automate tracking.</p>
+  <button onclick="showRecModal()" class="btn-primary">Add First Bill</button>
+</div>
 {% endif %}
 
-<div class="chart-card" style="margin-top:16px">
-  <p style="font-size:13px;color:var(--text-2);line-height:1.7">
-    <strong>How it works:</strong> When you log in, any active recurring expense whose day has passed this month is automatically inserted into your expenses. The <em>last applied</em> date prevents duplicates.
-  </p>
-</div>
-
-<!-- Add recurring modal -->
-<div id="addRecModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:999;align-items:center;justify-content:center" onclick="if(event.target===this)this.style.display='none'">
-  <div style="background:var(--bg-card);border-radius:var(--radius-lg);padding:28px;width:380px">
-    <h3 style="margin-bottom:16px">Add Recurring Expense</h3>
-    <form method="POST" action="{{ url_for('add_recurring') }}">
-      <div class="form-row" style="margin-bottom:12px">
-        <div class="form-group"><label>Title</label><input type="text" name="title" placeholder="Netflix, Rent..." required/></div>
-        <div class="form-group"><label>Amount ($)</label><input type="number" name="amount" placeholder="0.00" step="0.01" min="0.01" required/></div>
+<!-- Add Recurring Modal -->
+<div id="recModal" class="settings-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 2000; align-items: center; justify-content: center;">
+  <div class="card" style="width: 100%; max-width: 500px; padding: 32px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+      <h3 style="margin: 0;">New Subscription / Bill</h3>
+      <button onclick="closeRecModal()" style="background: none; border: none; font-size: 20px; color: var(--text-light); cursor: pointer;"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    
+    <form action="{{ url_for('add_recurring') }}" method="POST" class="modern-form">
+      <div class="form-group" style="margin-bottom: 16px;">
+        <label style="display: block; font-size: 13px; font-weight: 700; color: var(--text-muted); margin-bottom: 8px;">Description</label>
+        <input type="text" name="title" required placeholder="e.g., Netflix Subscription" style="width: 100%; padding: 12px 16px; border-radius: 10px; border: 1px solid var(--border); font-size: 15px; outline: none;">
       </div>
-      <div class="form-row" style="margin-bottom:12px">
-        <div class="form-group"><label>Category</label>
-          <select name="category">{% for c in categories %}<option>{{ c }}</option>{% endfor %}</select>
+      
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+        <div class="form-group">
+          <label style="display: block; font-size: 13px; font-weight: 700; color: var(--text-muted); margin-bottom: 8px;">Amount</label>
+          <div style="position: relative;">
+            <span style="position: absolute; left: 16px; top: 50%; transform: translateY(-50%); font-weight: 700; color: var(--text-muted);">{{ currency_symbol }}</span>
+            <input type="number" step="0.01" name="amount" required placeholder="0.00" style="width: 100%; padding: 12px 16px 12px 36px; border-radius: 10px; border: 1px solid var(--border); font-size: 15px; outline: none;">
+          </div>
         </div>
-        <div class="form-group"><label>Day of month</label>
-          <input type="number" name="day_of_month" placeholder="1–28" min="1" max="28" required/>
+        
+        <div class="form-group">
+          <label style="display: block; font-size: 13px; font-weight: 700; color: var(--text-muted); margin-bottom: 8px;">Category</label>
+          <div style="position: relative;">
+            <select name="category" required style="width: 100%; padding: 12px 36px 12px 16px; border-radius: 10px; border: 1px solid var(--border); background: white; font-size: 15px; appearance: none; outline: none;">
+              {% for cat in categories %}
+              <option value="{{ cat }}">{{ cat }}</option>
+              {% endfor %}
+            </select>
+            <i class="fa-solid fa-chevron-down" style="position: absolute; right: 16px; top: 50%; transform: translateY(-50%); color: var(--text-light); pointer-events: none; font-size: 12px;"></i>
+          </div>
         </div>
       </div>
-      <div class="form-group" style="margin-bottom:16px"><label>Note <span class="label-optional">(optional)</span></label><input type="text" name="note" placeholder=""/></div>
-      <div style="display:flex;gap:8px">
-        <button type="button" onclick="document.getElementById('addRecModal').style.display='none'" class="btn-secondary" style="flex:1">Cancel</button>
-        <button type="submit" class="btn-primary" style="flex:1">Save</button>
+      
+      <div class="form-group" style="margin-bottom: 16px;">
+        <label style="display: block; font-size: 13px; font-weight: 700; color: var(--text-muted); margin-bottom: 8px;">Day of Month</label>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <input type="number" name="day_of_month" required min="1" max="31" value="1" style="width: 80px; padding: 12px; border-radius: 10px; border: 1px solid var(--border); font-size: 15px; text-align: center; outline: none;">
+          <span style="font-size: 13px; color: var(--text-muted);">It will trigger every month on this date.</span>
+        </div>
+      </div>
+      
+      <div class="form-group" style="margin-bottom: 24px;">
+        <label style="display: block; font-size: 13px; font-weight: 700; color: var(--text-muted); margin-bottom: 8px;">Note (Optional)</label>
+        <input type="text" name="note" placeholder="Any extra details" style="width: 100%; padding: 12px 16px; border-radius: 10px; border: 1px solid var(--border); font-size: 15px; outline: none;">
+      </div>
+      
+      <div style="display: flex; justify-content: flex-end; gap: 12px;">
+        <button type="button" onclick="closeRecModal()" class="btn-secondary" style="padding: 12px 24px;">Cancel</button>
+        <button type="submit" class="btn-primary" style="padding: 12px 24px;">Save Bill</button>
       </div>
     </form>
   </div>
 </div>
+
+<style>
+.paused-row { opacity: 0.6; filter: grayscale(0.5); }
+.badge-active { background: var(--success-light); color: var(--success); }
+.badge-paused { background: var(--border); color: var(--text-muted); }
+.expense-table tbody tr:hover { background: #f8fafc !important; }
+</style>
+
+<script>
+function showRecModal() {
+  document.getElementById('recModal').style.display = 'flex';
+}
+function closeRecModal() {
+  document.getElementById('recModal').style.display = 'none';
+}
+// Close on outside click
+document.getElementById('recModal').addEventListener('click', function(e) {
+  if (e.target === this) closeRecModal();
+});
+</script>
 {% endblock %}

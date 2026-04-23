@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Budget Planner — Finance App{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div><h2>Budget Planner</h2><p class="page-sub">{{ month_name }} — set monthly limits per category</p></div>
+</div>
+
+<!-- Progress overview -->
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:20px">
+{% for row in rows %}
+<div class="chart-card" style="padding:14px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+    <span style="font-size:14px;font-weight:600">{{ row.icon }} {{ row.category }}</span>
+    <span style="font-size:12px;{% if row.over %}color:#E24B4A{% elif row.pct>80 %}color:#EF9F27{% else %}color:var(--text-3){% endif %}">
+      {% if row.over %}⚠ Over budget{% elif row.budget>0 %}{{ row.pct }}%{% else %}No limit{% endif %}
+    </span>
+  </div>
+  <div style="font-size:13px;color:var(--text-2);margin-bottom:6px">
+    ${{ "%.2f"|format(row.spent) }} {% if row.budget>0 %}/ ${{ "%.2f"|format(row.budget) }}{% else %}spent{% endif %}
+  </div>
+  {% if row.budget>0 %}
+  <div style="height:8px;background:var(--bg-surface);border-radius:4px;overflow:hidden">
+    <div style="height:100%;width:{{ row.pct }}%;background:{% if row.over %}#E24B4A{% elif row.pct>80 %}#EF9F27{% else %}#7F77DD{% endif %};border-radius:4px;transition:width 0.5s"></div>
+  </div>
+  {% endif %}
+</div>
+{% endfor %}
+</div>
+
+<!-- Set budgets form -->
+<div class="form-card" style="max-width:100%">
+  <h3 style="margin-bottom:16px">Set Budgets for {{ month_name }}</h3>
+  <form method="POST" action="{{ url_for('save_budget') }}">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:20px">
+      {% for row in rows %}
+      <div class="form-group">
+        <label>{{ row.icon }} {{ row.category }}</label>
+        <input type="number" name="budget_{{ row.category }}" placeholder="No limit"
+               value="{{ row.budget if row.budget>0 else '' }}" step="0.01" min="0"/>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="form-actions"><button type="submit" class="btn-primary">Save Budgets</button></div>
+  </form>
+</div>
+{% endblock %}

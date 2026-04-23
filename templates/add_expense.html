@@ -1,85 +1,112 @@
 {% extends "base.html" %}
-{% block title %}{{ 'Edit' if expense else 'Add' }} Expense — FinanceApp{% endblock %}
+{% block title %}{{ 'Edit' if expense else 'Add' }} Expense — Trackify{% endblock %}
 
 {% block content %}
 <div class="page-header">
   <div>
     <h2>{{ 'Edit Expense' if expense else 'New Expense' }}</h2>
-    <p class="page-sub">
-      {{ 'Update the details below' if expense else 'Record a new expense to your tracker' }}
-    </p>
+    <p class="page-sub">{{ 'Update your spending record' if expense else 'Record a new purchase manually or via bill scan' }}</p>
   </div>
-  <a href="{{ url_for('expenses') }}" class="btn-secondary">&#8592; Back</a>
+  <a href="{{ url_for('expenses') }}" class="btn-secondary">← Back</a>
 </div>
 
-<div class="form-card">
-  <form method="POST"
-        action="{{ url_for('edit_expense', expense_id=expense.id) if expense else url_for('add_expense') }}">
-
-    <div class="form-row">
-      <!-- Title -->
-      <div class="form-group">
-        <label for="title">Title</label>
-        <input type="text" id="title" name="title" placeholder="e.g. Grocery run"
-               value="{{ expense.title if expense else '' }}" required maxlength="150" autofocus/>
+<div style="display: grid; grid-template-columns: {{ '1fr 1.5fr' if not expense else '1fr' }}; gap: 32px; align-items: start;">
+  
+  {% if not expense %}
+  <!-- ── Bill Scanner Card ──────────────────── -->
+  <div class="card" style="background: linear-gradient(135deg, var(--primary), var(--primary-hover)); color: #fff;">
+    <div style="margin-bottom: 24px;">
+      <span style="font-size: 32px;">📷</span>
+      <h3 style="margin-top: 12px; color: #fff;">Smart Bill Scan</h3>
+      <p style="font-size: 14px; opacity: 0.9;">Upload a receipt and let Trackify AI extract all items for you.</p>
+    </div>
+    
+    <form method="POST" action="{{ url_for('add_expense_from_bill') }}" enctype="multipart/form-data">
+      <div class="form-group" style="margin-bottom: 20px;">
+        <label style="display: block; margin-bottom: 8px; font-weight: 500; font-size: 13px;">Upload Image</label>
+        <input type="file" name="bill_file" accept=".png,.jpg,.jpeg,.webp" required 
+               style="width: 100%; padding: 8px; background: rgba(255,255,255,0.1); border: 1px dashed rgba(255,255,255,0.3); border-radius: 8px; color: #fff;">
       </div>
-      <!-- Amount -->
-      <div class="form-group">
-        <label for="amount">Amount ($)</label>
-        <input type="number" id="amount" name="amount" placeholder="0.00"
-               step="0.01" min="0.01"
-               value="{{ expense.amount if expense else '' }}" required/>
+      
+      <div class="form-group" style="margin-bottom: 20px;">
+        <label style="display: block; margin-bottom: 8px; font-weight: 500; font-size: 13px;">Date</label>
+        <input type="date" name="expense_date" value="{{ today }}" max="{{ today }}" required 
+               style="width: 100%; padding: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; color: #fff;">
       </div>
-    </div>
 
-    <div class="form-row">
-      <!-- Category -->
-      <div class="form-group">
-        <label for="category">Category</label>
-        <input list="category-options" id="category" name="category" 
-               placeholder="e.g. Food or a custom category" 
-               value="{{ expense.category if expense else '' }}" required autocomplete="off"/>
-        <datalist id="category-options">
-          {% for cat in categories %}
-          <option value="{{ cat }}">{{ cat_icons.get(cat, '') }} {{ cat }}</option>
-          {% endfor %}
-        </datalist>
+      <div class="form-group" style="margin-bottom: 24px;">
+        <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 13px;">
+          <input type="checkbox" name="deduct_wallet" value="1" checked style="width: 18px; height: 18px;">
+          Deduct from wallet balance
+        </label>
       </div>
-      <!-- Date -->
-      <div class="form-group">
-        <label for="expense_date">Date</label>
-        <input type="date" id="expense_date" name="expense_date"
-               value="{{ expense.expense_date if expense else today }}"
-               max="{{ today }}" required/>
+
+      <button type="submit" class="btn-primary" style="width: 100%; background: #fff; color: var(--primary); font-weight: 700; border: none;">Scan & Review</button>
+    </form>
+  </div>
+  {% endif %}
+
+  <!-- ── Manual Form Card ──────────────────── -->
+  <div class="card">
+    <div style="margin-bottom: 24px;">
+      <h3 style="color: var(--text-main);">Manual Entry</h3>
+      <p style="font-size: 14px; color: var(--text-muted);">Enter transaction details manually</p>
+    </div>
+
+    <form method="POST" action="{{ url_for('edit_expense', eid=expense.id) if expense else url_for('add_expense') }}">
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+        <div class="form-group">
+          <label style="display: block; margin-bottom: 8px; font-weight: 600; font-size: 14px;">Title</label>
+          <input type="text" name="title" placeholder="e.g. Grocery run" value="{{ expense.title if expense else '' }}" required maxlength="150"
+                 style="width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-app);">
+        </div>
+        <div class="form-group">
+          <label style="display: block; margin-bottom: 8px; font-weight: 600; font-size: 14px;">Amount ({{ currency_symbol }})</label>
+          <input type="number" name="amount" placeholder="0.00" step="0.01" min="0.01" value="{{ expense.amount if expense else '' }}" required
+                 style="width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-app); font-weight: 700;">
+        </div>
       </div>
-    </div>
 
-    <!-- Note -->
-    <div class="form-group">
-      <label for="note">
-        Note
-        <span class="label-optional">(optional)</span>
-      </label>
-      <textarea id="note" name="note"
-                placeholder="Any extra detail about this expense…"
-                rows="3">{{ expense.note if expense else '' }}</textarea>
-    </div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+        <div class="form-group">
+          <label style="display: block; margin-bottom: 8px; font-weight: 600; font-size: 14px;">Category</label>
+          <select name="category" required style="width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-app);">
+            {% for cat in categories %}
+            <option value="{{ cat }}" {% if expense and expense.category == cat %}selected{% endif %}>
+              {{ cat_icons.get(cat, '💳') }} {{ cat }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label style="display: block; margin-bottom: 8px; font-weight: 600; font-size: 14px;">Date</label>
+          <input type="date" name="expense_date" value="{{ expense.expense_date if expense else today }}" max="{{ today }}" required
+                 style="width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-app);">
+        </div>
+      </div>
 
-    {% if not expense %}
-    <div class="form-group">
-      <label style="flex-direction:row;align-items:center;gap:8px;cursor:pointer">
-        <input type="checkbox" name="deduct_wallet" value="1" style="width:auto" checked/>
-        Deduct this expense from my wallet balance
-      </label>
-    </div>
-    {% endif %}
+      <div class="form-group" style="margin-bottom: 24px;">
+        <label style="display: block; margin-bottom: 8px; font-weight: 600; font-size: 14px;">Notes (Optional)</label>
+        <textarea name="note" rows="3" placeholder="Additional details..." 
+                  style="width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-app); resize: none;">{{ expense.note if expense else '' }}</textarea>
+      </div>
 
-    <div class="form-actions">
-      <a href="{{ url_for('expenses') }}" class="btn-secondary">Cancel</a>
-      <button type="submit" class="btn-primary">
-        {{ '✅ Update Expense' if expense else '💾 Save Expense' }}
-      </button>
-    </div>
-  </form>
+      {% if not expense %}
+      <div class="form-group" style="margin-bottom: 32px; background: var(--bg-app); padding: 16px; border-radius: 12px;">
+        <label style="display: flex; align-items: center; gap: 12px; cursor: pointer; font-weight: 600;">
+          <input type="checkbox" name="deduct_wallet" value="1" checked style="width: 20px; height: 20px;">
+          <span>Deduct from my wallet balance</span>
+        </label>
+      </div>
+      {% endif %}
+
+      <div style="display: flex; gap: 12px;">
+        <button type="submit" class="btn-primary" style="flex: 2; padding: 14px;">
+          {{ 'Update Expense' if expense else 'Save Expense' }}
+        </button>
+        <a href="{{ url_for('expenses') }}" class="btn-secondary" style="flex: 1; text-align: center; padding: 14px;">Cancel</a>
+      </div>
+    </form>
+  </div>
 </div>
 {% endblock %}

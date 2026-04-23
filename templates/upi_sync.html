@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Sync UPI Transactions — Trackify{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h2>📲 GPay / UPI Sync</h2>
+    <p class="page-sub">Auto-import your UPI transactions securely from Gmail</p>
+  </div>
+</div>
+
+<div style="display: grid; grid-template-columns: 1fr 1.5fr; gap: 32px; align-items: start;">
+
+  <!-- Information Card -->
+  <div class="card" style="background: var(--primary-light); border: 1px solid var(--primary); padding: 24px;">
+    <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 16px;">
+      <span style="font-size: 32px;">💡</span>
+      <h3 style="color: var(--primary); margin: 0;">How it works</h3>
+    </div>
+    <p style="font-size: 14px; color: var(--text-main); line-height: 1.6;">
+      Every time you pay via <strong>Google Pay, PhonePe, Paytm, or your bank's UPI</strong>, a transaction alert email is sent to your Gmail. 
+      We scan those emails, extract the amount & merchant, then let you <strong>review & confirm</strong> before adding to your expenses. 
+      <br><br>
+      <em style="color: var(--primary);">Nothing is saved without your approval.</em>
+    </p>
+
+    <h4 style="margin: 24px 0 12px; font-size: 14px; color: var(--text-main);">Supported Sources</h4>
+    <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+      {% for source in ["🟢 Google Pay", "🟣 PhonePe", "🔵 Paytm", "🔴 HDFC Bank", "🟠 ICICI Bank", "🟡 SBI", "🔵 Axis Bank", "🟤 Kotak Bank"] %}
+      <span style="background: var(--bg-app); border: 1px solid var(--border); border-radius: 20px; padding: 6px 14px; font-size: 12px; color: var(--text-muted); font-weight: 500;">
+        {{ source }}
+      </span>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Sync Configuration Card -->
+  <div class="card" style="padding: 32px;">
+    <div style="text-align: center; margin-bottom: 32px;">
+      <span style="font-size: 48px; display: block; margin-bottom: 16px;">🔍</span>
+      <h3 style="color: var(--text-main);">Fetch Transactions</h3>
+      <p style="font-size: 14px; opacity: 0.9;">Securely connect your Gmail to automatically extract UPI payments and sync them directly into Trackify.</p>
+    </div>
+
+    <form method="POST" action="{{ url_for('upi_sync_fetch') }}">
+      <div class="form-group" style="margin-bottom: 24px;">
+        <label style="display: block; margin-bottom: 8px; font-weight: 600; font-size: 14px;">Look back period</label>
+        <select name="days" style="width: 100%; padding: 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-app); font-size: 15px;">
+          <option value="7">Last 7 days</option>
+          <option value="15">Last 15 days</option>
+          <option value="30" selected>Last 30 days</option>
+          <option value="60">Last 60 days</option>
+          <option value="90">Last 90 days</option>
+        </select>
+      </div>
+
+      <button type="submit" class="btn-primary" style="width: 100%; padding: 16px; font-size: 16px; display: flex; justify-content: center; align-items: center; gap: 8px;">
+        <span>🔄</span> Scan Gmail Inbox
+      </button>
+    </form>
+    
+    <div style="margin-top: 24px; text-align: center; font-size: 12px; color: var(--text-muted);">
+      <p>Already-imported transactions (matched by UPI reference ID) are automatically skipped.</p>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

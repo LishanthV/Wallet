@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+{% block title %}Settings — Trackify{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <p class="page-kicker">Preferences & Profile</p>
+    <h2>Account Settings</h2>
+  </div>
+  <a href="{{ url_for('dashboard') }}" class="btn-secondary"><i class="fa-solid fa-arrow-left"></i> Back to Dashboard</a>
+</div>
+
+<div class="dashboard-main" style="grid-template-columns: 1fr 1fr;">
+    <!-- Left Column: Profile & Account -->
+    <div style="display: flex; flex-direction: column; gap: 24px;">
+        <!-- Profile Card -->
+        <div class="card">
+            <div class="card-header">
+                <h3>Personal Information</h3>
+            </div>
+            <form action="{{ url_for('update_profile') }}" method="POST" enctype="multipart/form-data" class="modern-form">
+                <div style="display: flex; align-items: center; gap: 24px; margin-bottom: 32px; background: var(--bg-app); padding: 20px; border-radius: 16px;">
+                    <div class="current-avatar-wrap" style="position: relative;">
+                        <div class="avatar-large" id="avatarPreview" style="width: 80px; height: 80px; border-radius: 50%; background: var(--primary); color: white; display: flex; align-items: center; justify-content: center; font-size: 32px; font-weight: 800; overflow: hidden; border: 4px solid white; box-shadow: var(--shadow-sm);">
+                            {% if user.profile_pic %}
+                                <img src="{{ url_for('static', filename='uploads/profiles/' + user.profile_pic) }}" alt="Profile" style="width: 100%; height: 100%; object-fit: cover;">
+                            {% else %}
+                                {{ user.name[0].upper() }}
+                            {% endif %}
+                        </div>
+                        <label for="profilePicInput" style="position: absolute; bottom: 0; right: 0; width: 28px; height: 28px; background: var(--secondary); color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; border: 2px solid white; font-size: 12px;">
+                            <i class="fa-solid fa-camera"></i>
+                        </label>
+                        <input type="file" id="profilePicInput" name="profile_pic" accept="image/*" style="display: none;" onchange="previewImage(this)">
+                    </div>
+                    <div>
+                        <p style="font-weight: 700; font-size: 16px;">Profile Picture</p>
+                        <p style="font-size: 13px; color: var(--text-muted);">JPG or PNG, max 2MB</p>
+                        {% if user.profile_pic %}
+                            <button type="button" onclick="removeAvatar()" style="background: none; border: none; color: var(--danger); font-size: 12px; font-weight: 700; cursor: pointer; padding: 0; margin-top: 4px;">Remove photo</button>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="form-group" style="margin-bottom: 20px;">
+                    <label style="display: block; font-size: 13px; font-weight: 700; color: var(--text-muted); margin-bottom: 8px;">Display Name</label>
+                    <input type="text" name="name" value="{{ user.name }}" required 
+                           style="width: 100%; padding: 12px 16px; border-radius: 10px; border: 1px solid var(--border); font-size: 15px; font-weight: 600;">
+                </div>
+
+                <div class="form-group" style="margin-bottom: 24px;">
+                    <label style="display: block; font-size: 13px; font-weight: 700; color: var(--text-muted); margin-bottom: 8px;">Date of Birth</label>
+                    <input type="date" name="dob" value="{{ user.dob if user.dob else '' }}" 
+                           style="width: 100%; padding: 12px 16px; border-radius: 10px; border: 1px solid var(--border); font-size: 15px; font-weight: 600; color: var(--text-main);">
+                </div>
+
+                <div class="form-group" style="margin-bottom: 24px;">
+                    <label style="display: block; font-size: 13px; font-weight: 700; color: var(--text-muted); margin-bottom: 8px;">Email Address</label>
+                    <input type="email" value="{{ user.email }}" disabled 
+                           style="width: 100%; padding: 12px 16px; border-radius: 10px; border: 1px solid var(--border); background: #f1f5f9; color: var(--text-light); font-size: 15px;">
+                    <p style="font-size: 11px; color: var(--text-light); margin-top: 4px;"><i class="fa-solid fa-lock"></i> Email cannot be changed for security.</p>
+                </div>
+
+                <button type="submit" class="btn-primary" style="width: 100%; justify-content: center;">Update Profile</button>
+            </form>
+            
+            <hr style="border: 0; border-top: 1px solid var(--border); margin: 32px 0;">
+            
+            <!-- Mobile Verification Section -->
+            <h4 style="margin-bottom: 16px; font-size: 15px;">Mobile Verification</h4>
+            
+            {% if user.is_mobile_verified %}
+                <div style="background: var(--success-light); border: 1px solid rgba(39, 174, 96, 0.2); padding: 16px; border-radius: 12px; display: flex; align-items: center; justify-content: space-between;">
+                    <div>
+                        <p style="font-weight: 700; color: var(--success); margin: 0; font-size: 14px;">{{ user.mobile }}</p>
+                        <p style="font-size: 12px; color: var(--success); opacity: 0.8; margin: 4px 0 0;"><i class="fa-solid fa-circle-check"></i> Verified</p>
+                    </div>
+                    <div style="width: 32px; height: 32px; border-radius: 50%; background: white; color: var(--success); display: flex; align-items: center; justify-content: center;">
+                        <i class="fa-solid fa-check"></i>
+                    </div>
+                </div>
+            {% elif session.get("mobile_verification") %}
+                <!-- OTP Input Form -->
+                <form action="{{ url_for('verify_mobile_otp') }}" method="POST" style="background: #f8fafc; border: 1px solid var(--border); padding: 16px; border-radius: 12px;">
+                    <p style="font-size: 13px; font-weight: 600; color: var(--text-main); margin-bottom: 12px;">Enter the 6-digit code sent to {{ session['mobile_verification']['mobile'] }}</p>
+                    <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+                        <input type="text" name="otp" required placeholder="123456" maxlength="6" style="flex: 1; padding: 10px 16px; border-radius: 8px; border: 1px solid var(--primary); font-size: 18px; font-weight: 700; letter-spacing: 4px; text-align: center; outline: none;">
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <button type="submit" class="btn-primary" style="flex: 1; padding: 10px; font-size: 13px;">Verify Code</button>
+                    </div>
+                </form>
+            {% else %}
+                <!-- Request OTP Form -->
+                <form action="{{ url_for('send_mobile_otp') }}" method="POST" style="display: flex; gap: 12px; align-items: flex-end;">
+                    <div style="flex: 1;">
+                        <label style="display: block; font-size: 13px; font-weight: 700; color: var(--text-muted); margin-bottom: 8px;">Phone Number</label>
+                        <input type="text" name="mobile" value="{{ user.mobile if user.mobile else '' }}" placeholder="+1 234 567 8900" required 
+                               style="width: 100%; padding: 12px 16px; border-radius: 10px; border: 1px solid var(--border); font-size: 15px;">
+                    </div>
+                    <button type="submit" class="btn-secondary" style="padding: 12px 20px; white-space: nowrap; height: 46px;">Send OTP</button>
+                </form>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Right Column: App Settings & Integrations -->
+    <div style="display: flex; flex-direction: column; gap: 24px;">
+        <!-- Preferences Card -->
+        <div class="card">
+            <div class="card-header">
+                <h3>App Preferences</h3>
+            </div>
+            
+            <div style="display: flex; flex-direction: column; gap: 20px;">
+                <!-- Currency Selection -->
+                <form action="{{ url_for('update_currency') }}" method="POST" style="background: var(--bg-app); padding: 16px; border-radius: 12px;">
+                    <label style="display: block; font-size: 13px; font-weight: 700; color: var(--text-muted); margin-bottom: 12px;">Base Currency</label>
+                    <div style="display: flex; gap: 8px;">
+                        <select name="currency_code" id="currencySymbolSelect" data-selected="{{ user.currency_code|default('INR') }}"
+                                style="flex: 1; padding: 12px; border-radius: 10px; border: 1px solid var(--border); font-weight: 600; font-size: 14px;">
+                            <option value="INR">₹ Rupee (INR) - India</option>
+                            <option value="USD">$ Dollar (USD) - USA</option>
+                            <option value="EUR">€ Euro (EUR) - Europe</option>
+                            <option value="GBP">£ Pound (GBP) - UK</option>
+                        </select>
+                        <button type="submit" class="btn-primary">Save</button>
+                    </div>
+                </form>
+
+                <!-- Integrations -->
+                <div style="padding: 0 4px;">
+                    <p style="font-size: 12px; font-weight: 700; color: var(--text-light); text-transform: uppercase; margin-bottom: 16px;">Integrations</p>
+                    
+                    <div style="display: flex; align-items: center; justify-content: space-between; padding-bottom: 16px; border-bottom: 1px solid var(--border);">
+                        <div>
+                            <p style="font-weight: 700; font-size: 14px;">Gmail UPI Sync <span style="font-size: 10px; background: var(--secondary); color: white; padding: 2px 6px; border-radius: 4px; margin-left: 4px;">BETA</span></p>
+                            <p style="font-size: 12px; color: var(--text-muted);">Auto-extract GPay/PhonePe data.</p>
+                        </div>
+                        <a href="{{ url_for('upi_sync_page') }}" class="btn-secondary" style="padding: 6px 12px; font-size: 13px;">Sync Now</a>
+                    </div>
+
+                    <div style="display: flex; align-items: center; justify-content: space-between; padding-top: 16px;">
+                        <div>
+                            <p style="font-weight: 700; font-size: 14px;">Live Notification Sync</p>
+                            <p style="font-size: 12px; color: var(--text-muted);">Sync instantly via Android.</p>
+                        </div>
+                        <button class="btn-secondary" onclick="showSyncGuide()" style="padding: 6px 12px; font-size: 13px;">Setup Guide</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Danger Zone Card -->
+        <div class="card" style="border: 1px solid #fee2e2; background: #fffcfc;">
+            <div class="card-header">
+                <h3 style="color: var(--danger);">Danger Zone</h3>
+            </div>
+            <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">Deleting your account will permanently remove all your transaction history and data.</p>
+            <button onclick="showDeleteModal()" class="btn-secondary" style="color: var(--danger); border-color: var(--danger); width: 100%;" type="button">
+                <i class="fa-solid fa-trash-can"></i> Delete Account
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div id="deleteModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 2000; place-items: center;">
+    <div class="card" style="max-width: 400px; text-align: center; padding: 32px;">
+        <div style="font-size: 48px; color: var(--danger); margin-bottom: 16px;"><i class="fa-solid fa-triangle-exclamation"></i></div>
+        <h3>Are you sure?</h3>
+        <p style="color: var(--text-muted); margin-bottom: 24px;">This action is permanent and cannot be undone. All your financial records will be lost.</p>
+        <div style="display: flex; gap: 12px;">
+            <button onclick="closeDeleteModal()" class="btn-secondary" style="flex: 1;">Cancel</button>
+            <form action="{{ url_for('delete_account') }}" method="POST" style="flex: 1;">
+                <button type="submit" class="btn-primary" style="background: var(--danger); width: 100%;">Delete</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function previewImage(input) {
+    if (input.files && input.files[0]) {
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            document.getElementById('avatarPreview').innerHTML = '<img src="' + e.target.result + '" style="width: 100%; height: 100%; object-fit: cover;">';
+        }
+        reader.readAsDataURL(input.files[0]);
+    }
+}
+function showDeleteModal() { document.getElementById('deleteModal').style.display = 'grid'; }
+function closeDeleteModal() { document.getElementById('deleteModal').style.display = 'none'; }
+function removeAvatar() {
+    if(confirm('Remove profile picture?')) {
+        const form = document.createElement('form');
+        form.method = 'POST'; form.action = "{{ url_for('remove_avatar') }}";
+        document.body.appendChild(form); form.submit();
+    }
+}
+document.addEventListener('DOMContentLoaded', () => {
+    const currencySelect = document.getElementById('currencySymbolSelect');
+    if (currencySelect) {
+        currencySelect.value = currencySelect.dataset.selected || 'INR';
+    }
+});
+</script>
+{% endblock %}

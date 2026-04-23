@@ -1,46 +1,76 @@
 {% extends "base.html" %}
-{% block title %}Budget Planner — Finance App{% endblock %}
+{% block title %}Budget Planner — Trackify{% endblock %}
+
 {% block content %}
 <div class="page-header">
-  <div><h2>Budget Planner</h2><p class="page-sub">{{ month_name }} — set monthly limits per category</p></div>
+  <div>
+    <h2>Budget Planner</h2>
+    <p class="page-sub">{{ month_name }} &middot; Set monthly spending limits per category</p>
+  </div>
 </div>
 
-<!-- Progress overview -->
-<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:20px">
+<!-- ── Budget Progress Overview ──────────────── -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; margin-bottom: 32px;">
 {% for row in rows %}
-<div class="chart-card" style="padding:14px">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-    <span style="font-size:14px;font-weight:600">{{ row.icon }} {{ row.category }}</span>
-    <span style="font-size:12px;{% if row.over %}color:#E24B4A{% elif row.pct>80 %}color:#EF9F27{% else %}color:var(--text-3){% endif %}">
-      {% if row.over %}⚠ Over budget{% elif row.budget>0 %}{{ row.pct }}%{% else %}No limit{% endif %}
-    </span>
+<div class="card" style="padding: 20px;">
+  <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px;">
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <span style="font-size: 24px; background: var(--bg-app); padding: 8px; border-radius: 10px;">{{ row.icon }}</span>
+      <div>
+        <div style="font-weight: 700; color: var(--text-main); font-size: 15px;">{{ row.category }}</div>
+        <div style="font-size: 12px; color: var(--text-muted);">
+            {{ currency_symbol }}{{ "%.2f"|format(row.spent) }} 
+            {% if row.budget > 0 %}of {{ currency_symbol }}{{ "%.2f"|format(row.budget) }}{% else %}spent{% endif %}
+        </div>
+      </div>
+    </div>
+    <div style="text-align: right;">
+        <span class="badge" style="
+            {% if row.over %}background: var(--danger-light); color: var(--danger);
+            {% elif row.pct > 80 %}background: var(--warning-light); color: var(--warning);
+            {% else %}background: var(--success-light); color: var(--success);{% endif %}
+            font-size: 11px; font-weight: 700;">
+            {% if row.over %}⚠️ OVER{% elif row.budget > 0 %}{{ row.pct }}%{% else %}NO LIMIT{% endif %}
+        </span>
+    </div>
   </div>
-  <div style="font-size:13px;color:var(--text-2);margin-bottom:6px">
-    ${{ "%.2f"|format(row.spent) }} {% if row.budget>0 %}/ ${{ "%.2f"|format(row.budget) }}{% else %}spent{% endif %}
-  </div>
-  {% if row.budget>0 %}
-  <div style="height:8px;background:var(--bg-surface);border-radius:4px;overflow:hidden">
-    <div style="height:100%;width:{{ row.pct }}%;background:{% if row.over %}#E24B4A{% elif row.pct>80 %}#EF9F27{% else %}#7F77DD{% endif %};border-radius:4px;transition:width 0.5s"></div>
+
+  {% if row.budget > 0 %}
+  <div style="height: 8px; background: var(--bg-app); border-radius: 10px; overflow: hidden; margin-top: 16px;">
+    <div style="height: 100%; width: {{ row.pct }}%; 
+                background: {% if row.over %}var(--danger){% elif row.pct > 80 %}var(--warning){% else %}var(--primary){% endif %}; 
+                border-radius: 10px; transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);"></div>
   </div>
   {% endif %}
 </div>
 {% endfor %}
 </div>
 
-<!-- Set budgets form -->
-<div class="form-card" style="max-width:100%">
-  <h3 style="margin-bottom:16px">Set Budgets for {{ month_name }}</h3>
+<!-- ── Budget Configuration ────────────────── -->
+<div class="card">
+  <div style="margin-bottom: 24px;">
+    <h3 style="color: var(--text-main);">Adjust Budget Limits</h3>
+    <p style="font-size: 14px; color: var(--text-muted);">Set how much you plan to spend in each category this month.</p>
+  </div>
+
   <form method="POST" action="{{ url_for('save_budget') }}">
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:20px">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; margin-bottom: 32px;">
       {% for row in rows %}
       <div class="form-group">
-        <label>{{ row.icon }} {{ row.category }}</label>
-        <input type="number" name="budget_{{ row.category }}" placeholder="No limit"
-               value="{{ row.budget if row.budget>0 else '' }}" step="0.01" min="0"/>
+        <label style="display: block; margin-bottom: 8px; font-weight: 600; font-size: 13px;">{{ row.icon }} {{ row.category }}</label>
+        <div style="position: relative;">
+            <span style="position: absolute; left: 12px; top: 12px; color: var(--text-muted); font-size: 14px;">{{ currency_symbol }}</span>
+            <input type="number" name="budget_{{ row.category }}" placeholder="No limit"
+                   value="{{ row.budget if row.budget > 0 else '' }}" step="0.01" min="0"
+                   style="width: 100%; padding: 12px 12px 12px 30px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-app);">
+        </div>
       </div>
       {% endfor %}
     </div>
-    <div class="form-actions"><button type="submit" class="btn-primary">Save Budgets</button></div>
+    
+    <div style="display: flex; justify-content: flex-end; padding-top: 24px; border-top: 1px solid var(--border);">
+      <button type="submit" class="btn-primary" style="padding: 14px 40px;">Update Monthly Budget</button>
+    </div>
   </form>
 </div>
 {% endblock %}

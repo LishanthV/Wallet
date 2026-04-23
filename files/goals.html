@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Savings Goals — Finance App{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div><h2>Savings Goals</h2><p class="page-sub">Track your progress</p></div>
+  <button onclick="document.getElementById('addGoalModal').style.display='flex'" class="btn-primary">+ New Goal</button>
+</div>
+
+{% if goals %}
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-bottom:20px">
+{% for g in goals %}
+<div class="chart-card">
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+    <span style="font-size:32px">{{ g.icon }}</span>
+    <div>
+      <div style="font-size:15px;font-weight:600">{{ g.title }}</div>
+      {% if g.deadline %}<div style="font-size:11px;color:var(--text-3)">Deadline: {{ g.deadline }}</div>{% endif %}
+    </div>
+  </div>
+  <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px">
+    <span style="color:var(--text-2)">Saved: <strong>${{ "%.2f"|format(g.saved_amount) }}</strong></span>
+    <span style="color:var(--text-2)">Target: <strong>${{ "%.2f"|format(g.target_amount) }}</strong></span>
+  </div>
+  <div style="height:10px;background:var(--bg-surface);border-radius:6px;overflow:hidden;margin-bottom:6px">
+    <div style="height:100%;width:{{ g.pct }}%;background:{% if g.pct>=100 %}#1D9E75{% else %}#7F77DD{% endif %};border-radius:6px;transition:width 0.6s"></div>
+  </div>
+  <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:14px">
+    <span style="color:{% if g.pct>=100 %}#1D9E75{% else %}#7F77DD{% endif %}">{{ g.pct }}% complete</span>
+    <span style="color:var(--text-3)">${{ "%.2f"|format(g.remaining) }} remaining</span>
+  </div>
+  {% if g.pct < 100 %}
+  <form method="POST" action="{{ url_for('goal_deposit',gid=g.id) }}" style="display:flex;gap:8px;margin-bottom:8px">
+    <input type="number" name="amount" placeholder="Deposit $" step="0.01" min="0.01" style="flex:1;font-size:13px" required/>
+    <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer">
+      <input type="checkbox" name="deduct_wallet" value="1" style="width:auto"/> Wallet
+    </label>
+    <button type="submit" class="btn-primary" style="padding:8px 14px;font-size:13px">Add</button>
+  </form>
+  {% else %}
+  <div style="text-align:center;padding:8px;background:rgba(29,158,117,0.1);border-radius:8px;color:#1D9E75;font-size:13px;font-weight:600;margin-bottom:8px">🎉 Goal achieved!</div>
+  {% endif %}
+  <form method="POST" action="{{ url_for('delete_goal',gid=g.id) }}" onsubmit="return confirm('Delete this goal?')" style="text-align:right">
+    <button type="submit" class="btn-delete" style="font-size:11px;padding:3px 10px">Delete</button>
+  </form>
+</div>
+{% endfor %}
+</div>
+{% else %}
+<div class="empty-card"><div class="empty-icon">🎯</div><p>No savings goals yet.</p><button onclick="document.getElementById('addGoalModal').style.display='flex'" class="btn-primary">Create your first goal</button></div>
+{% endif %}
+
+<!-- Add goal modal -->
+<div id="addGoalModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:999;align-items:center;justify-content:center" onclick="if(event.target===this)this.style.display='none'">
+  <div style="background:var(--bg-card);border-radius:var(--radius-lg);padding:28px;width:360px">
+    <h3 style="margin-bottom:16px">New Savings Goal</h3>
+    <form method="POST" action="{{ url_for('add_goal') }}">
+      <div class="form-group" style="margin-bottom:12px">
+        <label>Icon</label>
+        <div style="display:flex;flex-wrap:wrap;gap:8px">
+          {% for ic in goal_icons %}
+          <label style="cursor:pointer">
+            <input type="radio" name="icon" value="{{ ic }}" {% if loop.first %}checked{% endif %} style="display:none" onchange="document.getElementById('goalIconPreview').textContent='{{ ic }}'"/>
+            <span style="font-size:22px;padding:4px;border-radius:6px;display:inline-block" onclick="document.querySelectorAll('.icon-opt').forEach(e=>e.style.outline='none');this.style.outline='2px solid #7F77DD'">{{ ic }}</span>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:12px"><label>Title</label><input type="text" name="title" placeholder="e.g. Europe Trip" required/></div>
+      <div class="form-group" style="margin-bottom:12px"><label>Target Amount ($)</label><input type="number" name="target_amount" placeholder="5000" step="0.01" min="1" required/></div>
+      <div class="form-group" style="margin-bottom:16px"><label>Deadline <span class="label-optional">(optional)</span></label><input type="date" name="deadline"/></div>
+      <div style="display:flex;gap:8px">
+        <button type="button" onclick="document.getElementById('addGoalModal').style.display='none'" class="btn-secondary" style="flex:1">Cancel</button>
+        <button type="submit" class="btn-primary" style="flex:1">Create Goal</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

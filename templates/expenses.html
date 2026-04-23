@@ -1,96 +1,118 @@
 {% extends "base.html" %}
-{% block title %}All Expenses — FinanceApp{% endblock %}
+{% block title %}Expenses — Trackify{% endblock %}
 
 {% block content %}
 <div class="page-header">
   <div>
+    <p class="page-kicker">Transaction History</p>
     <h2>All Expenses</h2>
-    <p class="page-sub">{{ expenses|length }} record{{ 's' if expenses|length != 1 else '' }} found</p>
   </div>
-  <a href="{{ url_for('add_expense') }}" class="btn-primary">+ Add Expense</a>
+  <a href="{{ url_for('add_expense') }}" class="btn-primary"><i class="fa-solid fa-plus"></i> Add Expense</a>
 </div>
 
-<!-- ── Filter / Search Bar ──────────────────── -->
-<form method="GET" action="{{ url_for('expenses') }}" class="filter-bar">
-  <input
-    type="text" name="q" value="{{ search }}"
-    placeholder="&#128269; Search by title…"
-    id="expense-search"/>
-  <select name="cat" id="cat-filter">
-    <option value="">All Categories</option>
-    {% for cat in categories %}
-    <option value="{{ cat }}" {% if selected_cat == cat %}selected{% endif %}>
-      {{ cat_icons.get(cat, '💳') }} {{ cat }}
-    </option>
-    {% endfor %}
-  </select>
-  <select name="sort" id="sort-filter">
-    <option value="date_desc"   {% if sort == 'date_desc'   %}selected{% endif %}>Date ↓ (newest)</option>
-    <option value="date_asc"    {% if sort == 'date_asc'    %}selected{% endif %}>Date ↑ (oldest)</option>
-    <option value="amount_desc" {% if sort == 'amount_desc' %}selected{% endif %}>Amount ↓ (highest)</option>
-    <option value="amount_asc"  {% if sort == 'amount_asc'  %}selected{% endif %}>Amount ↑ (lowest)</option>
-  </select>
-  <button type="submit" class="btn-primary btn-sm">Filter</button>
-  {% if search or selected_cat %}
-  <a href="{{ url_for('expenses') }}" class="btn-secondary btn-sm">Clear</a>
-  {% endif %}
-</form>
+<!-- Filter Bar -->
+<div class="card" style="margin-bottom: 24px;">
+  <form method="GET" action="{{ url_for('expenses') }}" style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
+    <div style="flex: 1; min-width: 200px; position: relative;">
+      <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: var(--text-light);"></i>
+      <input
+        type="text" name="q" value="{{ search }}"
+        placeholder="Search transactions..."
+        style="width: 100%; padding: 12px 16px 12px 42px; border: 1px solid var(--border); border-radius: 12px; font-size: 14px; outline: none; transition: var(--transition);"/>
+    </div>
+    
+    <div style="position: relative; min-width: 180px;">
+      <select name="cat" style="width: 100%; padding: 12px 36px 12px 16px; border: 1px solid var(--border); border-radius: 12px; background: white; font-size: 14px; font-weight: 600; appearance: none; outline: none;">
+        <option value="">All Categories</option>
+        {% for cat in categories %}
+        <option value="{{ cat }}" {% if selected_cat == cat %}selected{% endif %}>{{ cat }}</option>
+        {% endfor %}
+      </select>
+      <i class="fa-solid fa-chevron-down" style="position: absolute; right: 16px; top: 50%; transform: translateY(-50%); color: var(--text-light); pointer-events: none; font-size: 12px;"></i>
+    </div>
 
+    <button type="submit" class="btn-primary" style="padding: 12px 24px;">Apply Filter</button>
+    {% if search or selected_cat %}
+    <a href="{{ url_for('expenses') }}" class="btn-secondary" style="padding: 12px 24px;">Clear</a>
+    {% endif %}
+  </form>
+</div>
+
+<!-- Expenses Table -->
 {% if expenses %}
-<div class="table-card">
-  <table class="expense-table">
-    <thead>
-      <tr>
-        <th>Date</th>
-        <th>Title</th>
-        <th>Category</th>
-        <th>Note</th>
-        <th class="text-right">Amount</th>
-        <th class="text-center">Actions</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for e in expenses %}
-      <tr>
-        <td class="td-date">{{ e.expense_date }}</td>
-        <td class="td-title">{{ e.title }}</td>
-        <td>
-          <span class="cat-badge">
-            <span>{{ cat_icons.get(e.category, '💳') }}</span>
-            {{ e.category }}
-          </span>
-        </td>
-        <td class="td-note">{{ e.note or '—' }}</td>
-        <td class="text-right td-amount">${{ "%.2f"|format(e.amount) }}</td>
-        <td class="text-center">
-          <div class="action-btns">
-            <a href="{{ url_for('edit_expense', expense_id=e.id) }}" class="btn-edit">Edit</a>
-            <form method="POST" action="{{ url_for('delete_expense', expense_id=e.id) }}"
-                  onsubmit="return confirm('Delete this expense?')" style="margin:0;">
-              <button type="submit" class="btn-delete">Delete</button>
-            </form>
-          </div>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+<div class="card" style="padding: 0; overflow: hidden;">
+  <div style="overflow-x: auto;">
+    <table class="expense-table" style="width: 100%; border-collapse: collapse;">
+      <thead>
+        <tr style="background: var(--bg-app); border-bottom: 1px solid var(--border); text-align: left;">
+          <th style="padding: 16px 24px; font-size: 12px; text-transform: uppercase; color: var(--text-muted); font-weight: 700; letter-spacing: 0.5px;">Date</th>
+          <th style="padding: 16px 24px; font-size: 12px; text-transform: uppercase; color: var(--text-muted); font-weight: 700; letter-spacing: 0.5px;">Title</th>
+          <th style="padding: 16px 24px; font-size: 12px; text-transform: uppercase; color: var(--text-muted); font-weight: 700; letter-spacing: 0.5px;">Category</th>
+          <th style="padding: 16px 24px; font-size: 12px; text-transform: uppercase; color: var(--text-muted); font-weight: 700; letter-spacing: 0.5px; text-align: right;">Amount</th>
+          <th style="padding: 16px 24px; font-size: 12px; text-transform: uppercase; color: var(--text-muted); font-weight: 700; letter-spacing: 0.5px; text-align: center;">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in expenses %}
+        <tr style="border-bottom: 1px solid var(--border); transition: background 0.2s;">
+          <td style="padding: 16px 24px;">
+            <div style="display: flex; flex-direction: column;">
+              <span style="font-weight: 700; color: var(--text-main);">{{ e.expense_date.strftime('%d') if e.expense_date else 'N/A' }}</span>
+              <span style="font-size: 12px; color: var(--text-light); text-transform: uppercase;">{{ e.expense_date.strftime('%b %Y') if e.expense_date else '' }}</span>
+            </div>
+          </td>
+          <td style="padding: 16px 24px;">
+            <div style="font-weight: 600; color: var(--text-main); margin-bottom: 4px;">{{ e.title }}</div>
+            {% if e.note %}
+            <div style="font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 4px;">
+              <i class="fa-regular fa-comment-dots"></i> {{ e.note }}
+            </div>
+            {% endif %}
+          </td>
+          <td style="padding: 16px 24px;">
+            <span style="background: var(--primary-light); color: var(--primary); padding: 6px 12px; border-radius: 8px; font-weight: 700; font-size: 12px;">
+              {{ e.category }}
+            </span>
+          </td>
+          <td style="padding: 16px 24px; text-align: right; font-weight: 700; color: var(--text-main);">
+            -{{ currency_symbol }}{{ "{:,.2f}".format(e.amount) }}
+          </td>
+          <td style="padding: 16px 24px; text-align: center;">
+            <div style="display: flex; gap: 8px; justify-content: center;">
+              <a href="{{ url_for('edit_expense', eid=e.id) }}" style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 8px; background: #f1f5f9; color: var(--text-main); text-decoration: none; transition: 0.2s;" onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'">
+                <i class="fa-solid fa-pen" style="font-size: 12px;"></i>
+              </a>
+              <form method="POST" action="{{ url_for('delete_expense', eid=e.id) }}" onsubmit="return confirm('Are you sure you want to delete this expense?')" style="margin: 0;">
+                <button type="submit" style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 8px; background: #fee2e2; color: var(--danger); border: none; cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='#fecaca'" onmouseout="this.style.background='#fee2e2'">
+                  <i class="fa-solid fa-trash" style="font-size: 12px;"></i>
+                </button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
 {% else %}
-<div class="empty-card">
-  <span class="empty-icon">💸</span>
-  <p>
-    {% if search or selected_cat %}
-      No expenses match your filters.
-    {% else %}
-      No expenses recorded yet.
-    {% endif %}
-  </p>
+<div class="card" style="text-align: center; padding: 64px 24px;">
+  <div style="width: 80px; height: 80px; background: var(--bg-app); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px; color: var(--text-light); font-size: 32px;">
+    <i class="fa-solid fa-receipt"></i>
+  </div>
+  <h3 style="margin-bottom: 8px;">No expenses found</h3>
+  <p style="color: var(--text-muted); margin-bottom: 24px;">{% if search or selected_cat %}Try adjusting your filters.{% else %}You haven't added any expenses yet.{% endif %}</p>
   {% if search or selected_cat %}
-  <a href="{{ url_for('expenses') }}" class="btn-secondary">Clear filters</a>
+  <a href="{{ url_for('expenses') }}" class="btn-secondary">Clear Filters</a>
   {% else %}
-  <a href="{{ url_for('add_expense') }}" class="btn-primary">Add your first expense</a>
+  <a href="{{ url_for('add_expense') }}" class="btn-primary">Add Your First Expense</a>
   {% endif %}
 </div>
 {% endif %}
+
+<style>
+.expense-table tbody tr:hover {
+    background: #f8fafc !important;
+}
+</style>
 {% endblock %}
