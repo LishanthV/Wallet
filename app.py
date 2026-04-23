@@ -39,10 +39,10 @@ DB_CONFIG = {
 }
 SMTP_CONFIG = {
     "host":     os.environ.get("SMTP_HOST",     "smtp.gmail.com"),
-    "port":     int(os.environ.get("SMTP_PORT", "587")),
-    "user":     os.environ.get("SMTP_USER",     "your_gmail@gmail.com"),
-    "password": os.environ.get("SMTP_PASSWORD", "your_app_password"),
-    "from":     os.environ.get("SMTP_FROM",     "Finance App <your_gmail@gmail.com>"),
+    "port":     int(os.environ.get("SMTP_PORT", "465")),
+    "user":     os.environ.get("SMTP_USER",     "lishanth2192005@gmail.com"),
+    "password": os.environ.get("SMTP_PASSWORD", "xlbjjednqrbmfovf"),
+    "from":     os.environ.get("SMTP_FROM",     "Trackify <lishanth2192005@gmail.com>"),
 }
 
 # ── Database Pooling ──────────────────────────
@@ -66,6 +66,11 @@ def ensure_db_schema():
         if not cur.fetchone():
             cur.execute("ALTER TABLE users ADD COLUMN dob DATE DEFAULT NULL, ADD COLUMN mobile VARCHAR(20) DEFAULT NULL, ADD COLUMN is_mobile_verified BOOLEAN DEFAULT FALSE")
             print("🚀 Database schema updated: Added dob, mobile, and is_mobile_verified columns.")
+        cur.execute("SHOW COLUMNS FROM users LIKE 'api_token'")
+        if not cur.fetchone():
+            cur.execute("ALTER TABLE users ADD COLUMN api_token VARCHAR(64) DEFAULT NULL")
+            cur.execute("UPDATE users SET api_token = MD5(CONCAT(email, id, RAND())) WHERE api_token IS NULL")
+            print("🚀 Database schema updated: Added api_token column.")
         conn.commit()
         cur.close()
         conn.close()
@@ -1174,6 +1179,42 @@ def sync_gpay():
         cur.execute("UPDATE users SET wallet_balance = GREATEST(wallet_balance - %s, 0) WHERE id = %s", (amount, uid))
         conn.commit()
         return jsonify({"status": "success", "message": f"Automatically added {title} (${amount}) to your tracker."})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+@app.route("/api/sync/android", methods=["POST"])
+def sync_android():
+    """Endpoint for Android automation tools (Tasker/MacroDroid) to send parsed SMS/notifications"""
+    data = request.get_json() or {}
+    api_token = data.get("api_token")
+    amount = float(data.get("amount", 0))
+    title = data.get("title", "Android Sync Payment")
+    
+    if not api_token:
+        return jsonify({"status": "error", "message": "Missing API token"}), 401
+    if amount <= 0:
+        return jsonify({"status": "error", "message": "Invalid amount"}), 400
+
+    conn = get_db()
+    if not conn: return jsonify({"error": "DB Error"}), 500
+    cur = conn.cursor(dictionary=True)
+    
+    try:
+        cur.execute("SELECT id FROM users WHERE api_token=%s", (api_token,))
+        user = cur.fetchone()
+        if not user:
+            return jsonify({"status": "error", "message": "Invalid API token"}), 403
+            
+        uid = user["id"]
+        category = infer_category_from_title(title)
+        cur.execute("INSERT INTO expenses (user_id, title, amount, category, expense_date, note) VALUES (%s, %s, %s, %s, %s, %s)",
+                    (uid, title, amount, category, date.today().isoformat(), "[Auto] Synced via Android"))
+        cur.execute("UPDATE users SET wallet_balance = GREATEST(wallet_balance - %s, 0) WHERE id = %s", (amount, uid))
+        conn.commit()
+        return jsonify({"status": "success", "message": f"Added {title} (${amount})"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
     finally:
